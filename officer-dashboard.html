@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morris Gilbert Inso - Officer Dashboard</title>
+    <meta name="theme-color" content="#0f141a" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="images/loading_logo.png" />
+    <link rel="apple-touch-icon" href="images/loading_logo.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape shape-a" aria-hidden="true"></div>
+    <div class="bg-shape shape-b" aria-hidden="true"></div>
+
+    <header class="brand-card topbar">
+      <img src="images/mgi_logo.png" alt="Morris Gilbert Inso logo" class="logo" />
+      <div>
+        <h1 id="page-title">Morris Gilbert Inso</h1>
+        <p>Credit Services</p>
+        <p>0965-338-2418</p>
+        <p>Talisay, Santander, Cebu</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="back-officers" class="btn-secondary" type="button">Back to Officers</button>
+        <button id="officer-logout" class="btn-danger" type="button">Log Out</button>
+        <button id="officer-hamburger" class="btn-hamburger" type="button" aria-label="Toggle content" aria-expanded="true">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="container" id="officer-main" style="display: flex; gap: 20px; align-items: flex-start;">
+      <div style="flex: 1; min-width: 0;">
+        <!-- Account Dashboard Section -->
+        <section class="panel portfolio-hero">
+          <span class="portfolio-label" id="officer-dashboard-title">Account Dashboard</span>
+          <div class="portfolio-hero-grid" style="grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+            <div>
+              <h2 style="margin: 0 0 8px 0; font-size: 0.95rem;">Total Loans Released</h2>
+              <strong id="dashboard-total-loans" class="portfolio-total" style="font-size: 1.4rem;">0</strong>
+              <p style="margin: 6px 0 0 0; font-size: 0.78rem; opacity: 0.7;">loans</p>
+            </div>
+            <div>
+              <h2 style="margin: 0 0 8px 0; font-size: 0.95rem;">Total Amount Released</h2>
+              <strong id="dashboard-total-amount" class="portfolio-total" style="font-size: 1.4rem;">₱0.00</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- Records Table Section -->
+        <section class="panel records-panel">
+          <div class="table-head">
+            <div class="records-header-spacer" aria-hidden="true"></div>
+            <div class="table-tools">
+              <label class="filter-control">
+                <span>Search Name</span>
+                <input type="text" id="filter-name" placeholder="Search by name" />
+              </label>
+              <label class="filter-control">
+                <span>Date Granted</span>
+                <input type="date" id="filter-date-granted" />
+              </label>
+              <label class="filter-control">
+                <span>Sort By</span>
+                <select id="sort-by">
+                  <option value="nameAsc">Name (A-Z)</option>
+                  <option value="nameDesc">Name (Z-A)</option>
+                  <option value="dateGrantedDesc">Date Granted (Newest)</option>
+                  <option value="dateGrantedAsc">Date Granted (Oldest)</option>
+                </select>
+              </label>
+              <label class="test-date-control">
+                <span>Test Date</span>
+                <input type="date" id="test-date" />
+              </label>
+              <button id="use-today" class="btn-secondary" type="button">Use Today</button>
+              <button id="toggle-loan-entry" class="btn-secondary" type="button" aria-expanded="true">Hide Loan Application</button>
+              <button id="clear-records" class="btn-danger" type="button">Delete All</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Lastname, First Name, Middle Initial</th>
+                  <th>Address</th>
+                  <th>Contact Number</th>
+                  <th>Purpose of Loan</th>
+                  <th>Mode of Payment</th>
+                  <th>Type of Loan</th>
+                  <th>Amount</th>
+                  <th>Date Granted</th>
+                  <th>Due Date</th>
+                  <th>Interest Rate / Per Period</th>
+                  <th>Outstanding Balance</th>
+                  <th>Paid Amount</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="records-body">
+                <tr>
+                  <td colspan="13" class="empty">No records yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- Loan Application Form (Right Side) -->
+      <section class="panel loan-entry-panel" id="loan-entry-panel" style="flex: 0 0 320px; position: sticky; top: 20px;">
+        <div class="panel-toggle">
+          <h2 style="margin: 0; font-size: 0.95rem;">Loan Application</h2>
+        </div>
+
+        <form id="loan-form" style="display: block;">
+          <div class="form-row" style="flex-direction: column; gap: 12px;">
+            <label>
+              <span>Name</span>
+              <input type="text" id="name" name="name" placeholder="" required />
+            </label>
+            <label>
+              <span>Address</span>
+              <input type="text" id="address" name="address" placeholder="" required />
+            </label>
+            <label>
+              <span>Contact</span>
+              <input type="tel" id="contactNumber" name="contactNumber" placeholder="" required />
+            </label>
+            <label>
+              <span>Purpose of Loan</span>
+              <select id="purposeOfLoan" name="purposeOfLoan" required>
+                <option value="">Select type</option>
+                <option value="Education">Education</option>
+                <option value="Medication">Medication</option>
+                <option value="Hospitalization">Hospitalization</option>
+                <option value="House Renovation">House Renovation</option>
+                <option value="Business">Business</option>
+                <option value="Fishing">Fishing</option>
+                <option value="Farming">Farming</option>
+                <option value="Personal">Personal</option>
+                <option value="Others">Others</option>
+              </select>
+            </label>
+            <label>
+              <span>Mode of Payment</span>
+              <select id="modeOfPayment" name="modeOfPayment" required>
+                <option value="">Select mode</option>
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+              </select>
+            </label>
+            <label>
+              <span>Type of Loan</span>
+              <select id="payableWithin" name="payableWithin" required>
+                <option value="">Select type</option>
+                <option value="emergency_fixed">Emergency Loan - Fixed</option>
+                <option value="monthly_60_fixed">Monthly (60 days) - Fixed</option>
+              </select>
+            </label>
+            <label>
+              <span>Amount</span>
+              <div class="input-with-suffix">
+                <input
+                  type="number"
+                  id="amount"
+                  name="amount"
+                  placeholder=""
+                  min="0"
+                  step="0.01"
+                  required
+                />
+                <span class="suffix">₱</span>
+              </div>
+            </label>
+            <label>
+              <span>Date Granted</span>
+              <input type="date" id="dateGranted" name="dateGranted" required />
+            </label>
+            <label>
+              <span>Interest Rate (%)</span>
+              <div class="input-with-suffix">
+                <input
+                  type="number"
+                  id="interestRate"
+                  name="interestRate"
+                  placeholder=""
+                  min="0"
+                  step="0.01"
+                  required
+                />
+                <span class="suffix">%</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="actions" style="flex-direction: column; gap: 8px; margin-top: 12px;">
+            <button type="submit" class="btn-primary" style="width: 100%;">Save Loan</button>
+            <button type="reset" class="btn-secondary" style="width: 100%;">Clear</button>
+          </div>
+
+          <p id="form-message" class="form-message" role="status" aria-live="polite" style="margin-top: 8px;"></p>
+        </form>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
+    <aside id="side-drawer" class="side-drawer" aria-hidden="true">
+      <div class="side-drawer-header">
+        <button id="drawer-close" class="drawer-close" type="button" aria-label="Close menu">&#10005;</button>
+      </div>
+      <div class="side-drawer-theme">
+        <span class="side-drawer-theme-label">Theme</span>
+        <div class="side-drawer-theme-options" role="radiogroup" aria-label="Theme selection">
+          <label class="theme-option"><input type="radio" name="theme-choice" value="white" /> <span>White</span></label>
+          <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
+        </div>
+      </div>
+      <div class="side-drawer-footer">
+        <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
+      </div>
+    </aside>
+
+    <script src="pwa-init.js"></script>
+    <script src="officer-dashboard.js"></script>
+  </body>
+</html>

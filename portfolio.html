@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morris Gilbert Inso - Portfolio</title>
+    <meta name="theme-color" content="#0f141a" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="images/loading_logo.png" />
+    <link rel="apple-touch-icon" href="images/loading_logo.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape shape-a" aria-hidden="true"></div>
+    <div class="bg-shape shape-b" aria-hidden="true"></div>
+
+    <header class="brand-card topbar">
+      <img src="images/mgi_logo.png" alt="Morris Gilbert Inso logo" class="logo" />
+      <div>
+        <h1>Morris Gilbert Inso</h1>
+        <p>Credit Services</p>
+        <p>0965-338-2418</p>
+        <p>Talisay, Santander, Cebu</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="back-dashboard" class="btn-secondary" type="button">Dashboard</button>
+        <button id="portfolio-logout" class="btn-danger" type="button">Log Out</button>
+        <button id="portfolio-hamburger" class="btn-hamburger" type="button" aria-label="Toggle content" aria-expanded="true">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="portfolio-page" id="portfolio-main">
+      <section class="panel portfolio-grid" style="padding: 12px 16px;">
+        <div class="table-head" style="gap: 12px;">
+          <h2 style="font-size: 0.95rem; margin: 0;">Portfolio Date Filter</h2>
+          <div class="filter-control" style="min-width: 150px;">
+            <span style="font-size: 0.85rem;">Particular Date</span>
+            <input type="date" id="portfolio-date-filter" />
+          </div>
+          <div class="filter-control" style="min-width: 150px;">
+            <span style="font-size: 0.85rem;">Month</span>
+            <input type="month" id="portfolio-month-filter" />
+          </div>
+          <button id="portfolio-date-clear" class="btn-secondary" type="button" style="padding: 6px 12px; font-size: 0.85rem;">Clear</button>
+        </div>
+      </section>
+
+      <section class="panel portfolio-hero">
+        <span class="portfolio-label">Portfolio</span>
+        <div class="portfolio-hero-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px;">
+          <div style="display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <h2 style="margin: 0 0 8px 0; font-size: 0.95rem;">Total Amount Released</h2>
+              <strong id="portfolio-total" class="portfolio-total" style="font-size: 1.4rem;">₱0.00</strong>
+            </div>
+          </div>
+          <div>
+            <h2 style="margin: 0 0 8px 0; font-size: 0.95rem;">Total Earned Interest</h2>
+            <strong id="portfolio-earned-interest" class="portfolio-total" style="font-size: 1.4rem;">₱0.00</strong>
+          </div>
+          <div>
+            <h2 style="margin: 0 0 8px 0; font-size: 0.95rem;">Total Outstanding Balance</h2>
+            <strong id="portfolio-total-outstanding" class="portfolio-total" style="font-size: 1.4rem;">₱0.00</strong>
+          </div>
+          <div>
+            <h2 style="margin: 0 0 8px 0; font-size: 0.95rem;">Daily Collection</h2>
+            <div style="display: flex; gap: 12px; align-items: center; font-size: 0.85rem;">
+              <div>
+                <p style="font-size: 0.75rem; margin: 0 0 3px 0; opacity: 0.8;">Principal</p>
+                <strong id="daily-principal-collected" style="display: block; font-size: 0.95rem;">₱0.00</strong>
+              </div>
+              <div>
+                <p style="font-size: 0.75rem; margin: 0 0 3px 0; opacity: 0.8;">Interest</p>
+                <strong id="daily-interest-collected" style="display: block; font-size: 0.95rem;">₱0.00</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p id="portfolio-meta" class="portfolio-meta" style="margin-top: 10px; margin-bottom: 0;">0 released loans</p>
+      </section>
+
+      <section class="panel portfolio-grid" style="padding: 12px 16px; gap: 12px;">
+        <article class="portfolio-stat-card" style="padding: 12px;">
+          <span class="portfolio-stat-label" style="font-size: 0.85rem;">Released Loans</span>
+          <strong id="portfolio-count" class="portfolio-stat-value" style="font-size: 1.3rem;">0</strong>
+          <p style="margin: 6px 0 0 0; font-size: 0.78rem; color: #b42318; font-weight: 700;">Past Due: <span id="portfolio-past-due-count">0</span></p>
+        </article>
+        <article class="portfolio-stat-card" style="padding: 12px;">
+          <span class="portfolio-stat-label" style="font-size: 0.85rem;">Total Release</span>
+          <strong id="portfolio-average" class="portfolio-stat-value" style="font-size: 1.3rem;">₱0.00</strong>
+          <div id="released-interest-breakdown" style="margin-top: 8px; font-size: 0.75rem; line-height: 1.35; max-height: 115px; overflow: auto;">
+            <p class="empty" style="margin: 0;">No released loans yet.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel portfolio-types-panel" style="padding: 12px 16px;">
+        <div class="table-head" style="margin-bottom: 12px;">
+          <h2 style="font-size: 0.95rem; margin: 0;">Number of Types of Loans</h2>
+        </div>
+          <div id="portfolio-types-grid" class="portfolio-types-grid" style="grid-template-columns: repeat(5, 1fr); gap: 10px;">
+            <article class="portfolio-type-card" style="padding: 10px;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Monthly - Open</span>
+              <strong id="type-monthly-open" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-monthly-open-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Bi - Monthly</span>
+              <strong id="type-bi-monthly" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-bi-monthly-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Cash Advance</span>
+              <strong id="type-cash-advance" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-cash-advance-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Monthly (60 Days) - Fixed</span>
+              <strong id="type-monthly-60" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-monthly-60-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px; grid-column: 1 / 2;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Monthly (14 weeks)</span>
+              <strong id="type-monthly-14-weeks" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-monthly-14-weeks-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px; grid-column: 2 / 3;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Emergency Loan - Fixed</span>
+              <strong id="type-emergency" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-emergency-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px; grid-column: 3 / 4;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Not Listed</span>
+              <strong id="type-not-listed" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-not-listed-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px; grid-column: 4 / 5;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Account Officer</span>
+              <strong id="type-account-officer" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-account-officer-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+            <article class="portfolio-type-card" style="padding: 10px; grid-column: 5 / 6;">
+              <span class="portfolio-type-label" style="font-size: 0.8rem;">Settled</span>
+              <strong id="type-settled" class="portfolio-type-value" style="font-size: 1.2rem;">0</strong>
+              <p style="font-size: 0.75rem; margin: 4px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-settled-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+          </div>
+      </section>
+
+    </main>
+
+    <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
+    <aside id="side-drawer" class="side-drawer" aria-hidden="true">
+      <div class="side-drawer-header">
+        <button id="drawer-close" class="drawer-close" type="button" aria-label="Close menu">&#10005;</button>
+      </div>
+      <div class="side-drawer-theme">
+        <span class="side-drawer-theme-label">Theme</span>
+        <div class="side-drawer-theme-options" role="radiogroup" aria-label="Theme selection">
+          <label class="theme-option"><input type="radio" name="theme-choice" value="white" /> <span>White</span></label>
+          <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
+        </div>
+      </div>
+      <div class="side-drawer-footer">
+        <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
+      </div>
+    </aside>
+
+    <script src="pwa-init.js"></script>
+    <script src="portfolio.js"></script>
+  </body>
+</html>

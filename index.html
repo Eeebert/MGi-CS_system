@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morris Gilbert Inso - Credit Services</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="loading-screen" class="loading-screen">
+      <div class="login-shell">
+        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" />
+        <form id="login-form" class="login-form" novalidate>
+          <h2>Login</h2>
+          <label>
+            <span>Username</span>
+            <input type="text" id="login-username" autocomplete="username" required />
+          </label>
+          <label>
+            <span>Password</span>
+            <div class="password-wrap">
+              <input type="password" id="login-password" autocomplete="current-password" required />
+              <button type="button" id="toggle-password" class="eye-btn" aria-label="Show password">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </label>
+          <button type="submit" class="btn-primary login-submit">Log In</button>
+          <p id="login-message" class="login-message" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+
+    <div class="bg-shape shape-a" aria-hidden="true"></div>
+    <div class="bg-shape shape-b" aria-hidden="true"></div>
+
+    <header class="brand-card topbar">
+      <img src="images/mgi_logo.png" alt="Morris Gilbert Inso logo" class="logo" />
+      <div>
+        <h1>Morris Gilbert Inso</h1>
+        <p>Credit Services</p>
+         <p>Talisay, Santander, Cebu</p>
+        <p>0965-338-2418</p>
+       
+      </div>
+      <div class="topbar-actions">
+        <button id="toggle-loan-entry" class="btn-secondary" type="button" aria-expanded="false">Loan Application</button>
+        <button id="toggle-runner" class="btn-secondary" type="button">Account Officer</button>
+        <button id="toggle-release-summary" class="btn-secondary" type="button">Portfolio</button>
+        <button id="main-hamburger" class="btn-hamburger" type="button" aria-label="Toggle content" aria-expanded="true">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="container" id="main-content">
+      <section class="panel loan-entry is-collapsed" id="loan-entry-panel" aria-hidden="true">
+      <meta name="theme-color" content="#0f141a" />
+      <link rel="manifest" href="manifest.webmanifest" />
+      <link rel="icon" type="image/png" href="images/loading_logo.png" />
+      <link rel="apple-touch-icon" href="images/loading_logo.png" />
+        <h2>Loan Application Entry</h2>
+        <form id="loan-form" novalidate>
+          <div class="grid">
+            <label>
+              <span>Last Name</span>
+              <input type="text" id="lastName" name="lastName" placeholder="Enter last name" required />
+            </label>
+
+            <label>
+              <span>First Name</span>
+              <input type="text" id="firstName" name="firstName" placeholder="Enter first name" required />
+            </label>
+
+            <label>
+              <span>Middle Initial</span>
+              <input type="text" id="middleInitial" name="middleInitial" placeholder="M" maxlength="1" required />
+            </label>
+
+            <label>
+              <span>Address</span>
+              <input type="text" id="address" name="address" placeholder="Enter address" required />
+            </label>
+
+            <label>
+              <span>Co-maker</span>
+              <input type="text" id="coMaker" name="coMaker" placeholder="Enter co-maker name" />
+            </label>
+
+            <label id="coMakerContactWrap">
+              <span>Co-maker Contact Number</span>
+              <input type="text" id="coMakerContactNumber" name="coMakerContactNumber" placeholder="Enter co-maker contact number" />
+            </label>
+
+            <label id="coMakerAddressWrap">
+              <span>Co-maker Address</span>
+              <input type="text" id="coMakerAddress" name="coMakerAddress" placeholder="Enter co-maker address" />
+            </label>
+
+            <label>
+              <span>Contact Number</span>
+              <input type="text" id="contactNumber" name="contactNumber" placeholder="Enter contact number" required />
+            </label>
+
+            <label>
+              <span>Purpose of Loan</span>
+              <select id="purposeOfLoan" name="purposeOfLoan" required>
+                <option value="">Select type</option>
+                <option value="Education">Education</option>
+                <option value="Medication">Medication</option>
+                <option value="Hospitalization">Hospitalization</option>
+                <option value="House Renovation">House Renovation</option>
+                <option value="Business">Business</option>
+                <option value="Fishing">Fishing</option>
+                <option value="Farming">Farming</option>
+                <option value="Personal">Personal</option>
+                <option value="Others">Others</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Loan Amount</span>
+              <div class="input-with-prefix">
+                <span class="prefix">PHP</span>
+                <input
+                  type="text"
+                  id="amount"
+                  name="amount"
+                  placeholder=""
+                  inputmode="decimal"
+                  autocomplete="off"
+                  required
+                />
+              </div>
+            </label>
+
+            <label>
+              <span>Date Granted</span>
+              <input type="date" id="dateGranted" name="dateGranted" placeholder="dd/mm/yyyy" required />
+            </label>
+
+            <label>
+              <span>Mode of Payment</span>
+              <select id="modeOfPayment" name="modeOfPayment" required>
+                <option value="">Select type</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Daily">Daily</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Bi-Monthly">Bi-Monthly</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Type of Loan</span>
+              <select id="payableWithin" name="payableWithin" required>
+                <option value="">Select type</option>
+                <option value="monthly_open">Monthly - Open</option>
+                <option value="bi_monthly_open">Bi - Monthly</option>
+                <option value="cash_advance_fixed_15">Cash Advance (15 days)</option>
+                <option value="monthly_60_fixed">Monthly (60 days) - Fixed</option>
+                <option value="monthly_100_fixed">Monthly (14 weeks)</option>
+                <option value="emergency_fixed">Emergency Loan - Fixed</option>
+                <option value="no_listed">Not Listed</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Interest Rate (%)</span>
+              <div class="input-with-suffix">
+                <input
+                  type="number"
+                  id="interestRate"
+                  name="interestRate"
+                  placeholder=""
+                  min="0"
+                  step="0.01"
+                  required
+                />
+                <span class="suffix">%</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn-primary">Save Loan Record</button>
+            <button type="reset" class="btn-secondary">Clear</button>
+          </div>
+
+          <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="panel records-panel">
+        <div class="table-head">
+          <div class="records-header-spacer" aria-hidden="true"></div>
+          <div class="table-tools">
+            <label class="filter-control">
+              <span>Search Name</span>
+              <input type="text" id="filter-name" placeholder="Search by name" />
+            </label>
+            <label class="filter-control">
+              <span>Date Granted</span>
+              <input type="date" id="filter-date-granted" />
+            </label>
+            <label class="filter-control">
+              <span>Due Date</span>
+              <input type="date" id="filter-due-date" />
+            </label>
+            <label class="filter-control">
+              <span>Type of Loan</span>
+              <select id="filter-payable">
+                <option value="">All</option>
+                <option value="status_write_off">Write-Off</option>
+                <option value="status_hatag_hatag">Hatag-Hatag</option>
+                <option value="monthly_open">Monthly - Open</option>
+                <option value="bi_monthly_open">Bi - Monthly</option>
+                <option value="cash_advance_fixed_15">Cash Advance (15 days) - Fixed</option>
+                <option value="monthly_60_fixed">Monthly (60 days) - Fixed</option>
+                <option value="monthly_100_fixed">Monthly (100 days) - Fixed</option>
+                <option value="emergency_fixed">Emergency Loan - Fixed</option>
+                <option value="no_listed">Not Listed</option>
+              </select>
+            </label>
+            <label class="filter-control">
+              <span>Sort By</span>
+              <select id="sort-by">
+                <option value="nameAsc">Name (A-Z)</option>
+                <option value="nameDesc">Name (Z-A)</option>
+                <option value="dateGrantedDesc">Date Granted (Newest)</option>
+                <option value="dateGrantedAsc">Date Granted (Oldest)</option>
+                <option value="dueDateAsc">Due Date (Soonest)</option>
+                <option value="dueDateDesc">Due Date (Latest)</option>
+                <option value="pastDue">Past Due (Only)</option>
+                <option value="payableAsc">Type (A-Z)</option>
+              </select>
+            </label>
+            <label class="test-date-control">
+              <span>Test Date</span>
+              <input type="date" id="test-date" />
+            </label>
+            <button id="use-today" class="btn-secondary" type="button">Use Today</button>
+            <button id="export-word" class="btn-secondary" type="button">Print to Word (.doc)</button>
+            <button id="clear-records" class="btn-danger" type="button">Delete All</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Lastname, First Name, Middle Initial</th>
+                <th>Address</th>
+                <th>Contact Number</th>
+                <th>Purpose of Loan</th>
+                <th>Mode of Payment</th>
+                <th>Type of Loan</th>
+                <th>Amount</th>
+                <th>Date Granted</th>
+                <th>Due Date</th>
+                <th>Interest Rate / Per Period</th>
+                <th>Pay Date</th>
+                <th>Arrears</th>
+                <th>Other Arrears</th>
+                <th>Outstanding Balance</th>
+                <th>Paid Amount</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="records-body">
+              <tr>
+                <td colspan="16" class="empty">No records yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div id="write-off-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="write-off-title">
+        <h3 id="write-off-title">Confirm Write-Off</h3>
+        <p>Enter password to activate write-off and freeze interest growth.</p>
+        <label class="dialog-field">
+          <span>Password</span>
+          <input type="password" id="write-off-password" autocomplete="current-password" />
+        </label>
+        <p id="write-off-error" class="dialog-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" id="write-off-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="write-off-confirm" class="btn-danger">Confirm Write-Off</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="payment-history-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card payment-history-card" role="dialog" aria-modal="true" aria-labelledby="payment-history-title">
+        <div class="payment-history-head">
+          <div>
+            <h3 id="payment-history-title">Payment History</h3>
+          </div>
+          <button type="button" id="payment-history-close" class="btn-secondary">Close</button>
+        </div>
+        <div id="payment-history-content" class="payment-history-content"></div>
+      </div>
+    </div>
+
+    <div id="payment-entry-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card payment-entry-card" role="dialog" aria-modal="true" aria-labelledby="payment-entry-title">
+        <h3 id="payment-entry-title">Enter Payment</h3>
+        <p id="payment-entry-subtitle">Provide amount to apply.</p>
+        <label class="dialog-field">
+          <span>Amount Paid</span>
+          <input type="text" id="payment-entry-input" inputmode="decimal" autocomplete="off" placeholder="0.00" />
+        </label>
+        <p id="payment-entry-preview" class="payment-entry-preview">Applied: Interest ₱0.00 | Principal ₱0.00</p>
+        <p id="payment-entry-error" class="dialog-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" id="payment-entry-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="payment-entry-confirm" class="btn-pay">Confirm Pay</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="payment-confirm-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card payment-confirm-card" role="dialog" aria-modal="true" aria-labelledby="payment-confirm-title">
+        <h3 id="payment-confirm-title">Confirm Payment</h3>
+        <p id="payment-confirm-text" class="payment-confirm-text">Confirm payment of ₱0.00?</p>
+        <div class="payment-confirm-amount" id="payment-confirm-amount">₱0.00</div>
+        <div class="dialog-actions">
+          <button type="button" id="payment-confirm-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="payment-confirm-yes" class="btn-pay">Yes, Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="logout-confirm-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
+        <h3 id="logout-confirm-title">Confirm Logout</h3>
+        <p class="logout-confirm-text">Do you want to log out?</p>
+        <div class="dialog-actions">
+          <button type="button" id="logout-confirm-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="logout-confirm-yes" class="btn-danger">Log Out</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
+    <aside id="side-drawer" class="side-drawer" aria-hidden="true">
+      <div class="side-drawer-header">
+        <button id="drawer-close" class="drawer-close" type="button" aria-label="Close menu">&#10005;</button>
+      </div>
+      <div class="side-drawer-theme">
+        <span class="side-drawer-theme-label">Theme</span>
+        <div class="side-drawer-theme-options" role="radiogroup" aria-label="Theme selection">
+          <label class="theme-option"><input type="radio" name="theme-choice" value="white" /> <span>White</span></label>
+          <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
+        </div>
+      </div>
+      <div class="side-drawer-footer">
+        <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
+      </div>
+    </aside>
+
+    <script src="app.js?v=20260402_01"></script>
+    <script src="pwa-init.js"></script>
+  </body>
+</html>

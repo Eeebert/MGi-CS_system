@@ -1,0 +1,63 @@
+{
+  "name": "Morris Gilbert Inso Credit Services",
+  "short_name": "MGI CS",
+  "description": "MGI Credit Services dashboard",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f141a",
+  "theme_color": "#0f141a",
+  "icons": [
+    {
+      "src": "/images/loading_logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/loading_logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/index.html",
+      "icons": [
+        {
+          "src": "/images/loading_logo.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Portfolio",
+      "short_name": "Portfolio",
+      "url": "/portfolio.html",
+      "icons": [
+        {
+          "src": "/images/loading_logo.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Account Officer",
+      "short_name": "Officer",
+      "url": "/runner.html",
+      "icons": [
+        {
+          "src": "/images/loading_logo.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}
