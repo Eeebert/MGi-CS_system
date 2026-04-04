@@ -18,18 +18,31 @@ if (databaseUrl) {
       rejectUnauthorized: false,
     },
   });
+  pool.on("error", (err) => {
+    console.error("Unexpected database pool error:", err.message);
+  });
 }
 
 async function ensureSchema() {
   if (!pool) return;
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS app_state (
-      id TEXT PRIMARY KEY,
-      payload JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
+  const MAX_RETRIES = 5;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_state (
+          id TEXT PRIMARY KEY,
+          payload JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+      return;
+    } catch (error) {
+      console.error(`Schema setup attempt ${attempt}/${MAX_RETRIES} failed:`, error.message);
+      if (attempt === MAX_RETRIES) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 3000 * attempt));
+    }
+  }
 }
 
 app.get("/health", async (_req, res) => {
@@ -53,14 +66,19 @@ app.get("/api/state/:id", async (req, res) => {
     return res.status(503).json({ error: "Database is not configured" });
   }
 
-  const id = req.params.id;
-  const result = await pool.query("SELECT payload FROM app_state WHERE id = $1", [id]);
+  try {
+    const id = req.params.id;
+    const result = await pool.query("SELECT payload FROM app_state WHERE id = $1", [id]);
 
-  if (result.rowCount === 0) {
-    return res.json({ payload: null });
+    if (result.rowCount === 0) {
+      return res.json({ payload: null });
+    }
+
+    return res.json({ payload: result.rows[0].payload });
+  } catch (error) {
+    console.error("GET /api/state error:", error.message);
+    return res.status(500).json({ error: "Database query failed" });
   }
-
-  return res.json({ payload: result.rows[0].payload });
 });
 
 app.put("/api/state/:id", async (req, res) => {
@@ -75,17 +93,22 @@ app.put("/api/state/:id", async (req, res) => {
     return res.status(400).json({ error: "payload is required" });
   }
 
-  await pool.query(
-    `
-      INSERT INTO app_state (id, payload)
-      VALUES ($1, $2)
-      ON CONFLICT (id)
-      DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
-    `,
-    [id, payload]
-  );
+  try {
+    await pool.query(
+      `
+        INSERT INTO app_state (id, payload)
+        VALUES ($1, $2)
+        ON CONFLICT (id)
+        DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+      `,
+      [id, payload]
+    );
 
-  return res.json({ ok: true });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("PUT /api/state error:", error.message);
+    return res.status(500).json({ error: "Database query failed" });
+  }
 });
 
 app.get("/", (_req, res) => {
@@ -95,11 +118,10 @@ app.get("/", (_req, res) => {
 (async () => {
   try {
     await ensureSchema();
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
   } catch (error) {
-    console.error("Startup error:", error);
-    process.exit(1);
+    console.error("Schema setup failed after retries, continuing without schema:", error.message);
   }
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 })();

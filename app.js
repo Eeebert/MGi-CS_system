@@ -92,6 +92,32 @@ function getRecords() {
 
 function setRecords(records) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  syncRecordsToServer(records);
+}
+
+async function syncRecordsToServer(records) {
+  try {
+    await fetch("/api/state/" + STORAGE_KEY, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: records }),
+    });
+  } catch {
+    // Server unavailable — data is safe in localStorage
+  }
+}
+
+async function loadRecordsFromServer() {
+  try {
+    const res = await fetch("/api/state/" + STORAGE_KEY);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data.payload) && data.payload.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+    }
+  } catch {
+    // Network issue — fall back to local data
+  }
 }
 
 function updateReleasedSummaryStats() {
@@ -3237,6 +3263,9 @@ renderRecords();
 initializeDatePickers();
 
 window.addEventListener("load", () => {
+  // Pull latest data from the database, then re-render so all devices stay in sync
+  loadRecordsFromServer().then(() => renderRecords());
+
   if (sessionStorage.getItem(LOGIN_SESSION_KEY) === "1") {
     hideLoadingScreen();
     return;
