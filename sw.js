@@ -1,4 +1,4 @@
-const CACHE_NAME = "mgi-cs-v1";
+const CACHE_NAME = "mgi-cs-v2";
 const ASSETS = [
   "/",
   "/index.html",
