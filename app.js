@@ -1,3 +1,4 @@
+// DOM element assignments (move to top for hoisting)
 const form = document.getElementById("loan-form");
 const message = document.getElementById("form-message");
 const body = document.getElementById("records-body");
@@ -59,6 +60,145 @@ const logoutBtn = document.getElementById("logout-btn");
 const logoutConfirmModal = document.getElementById("logout-confirm-modal");
 const logoutConfirmCancelBtn = document.getElementById("logout-confirm-cancel");
 const logoutConfirmYesBtn = document.getElementById("logout-confirm-yes");
+
+// Supabase-backed API for records
+async function getRecords() {
+  setSyncStatus("syncing", "syncing...");
+  try {
+    const res = await fetch(`/api/state/${STORAGE_KEY}?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
+    });
+    if (!res.ok) throw new Error("Failed to fetch records");
+    const data = await res.json();
+    if (Array.isArray(data.payload)) {
+      setSyncStatus("ok", `updated (${data.payload.length} records)`);
+      return data.payload;
+    }
+    setSyncStatus("error", "invalid server payload");
+    return [];
+  } catch (err) {
+    setSyncStatus("error", "offline or fetch error");
+    setDiagnosticsPanel("error", "Cannot load records from Supabase.", err.message);
+    return [];
+  }
+}
+
+async function setRecords(records) {
+  setSyncStatus("syncing", "saving...");
+  try {
+    const res = await fetch(`/api/state/${STORAGE_KEY}`, {
+      method: "PUT",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: records }),
+    });
+    if (!res.ok) throw new Error("Failed to save records");
+    setSyncStatus("ok", `saved (${records.length} records)`);
+    return true;
+  } catch (err) {
+    setSyncStatus("error", "save failed");
+    setDiagnosticsPanel("error", "Cannot save records to Supabase.", err.message);
+    return false;
+  }
+}
+async function updateReleasedSummaryStats() {
+  if (!releaseSummaryAmount || !releaseSummaryCount) {
+    return;
+  }
+  const records = await getRecords();
+  const totalReleasedAmount = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  releaseSummaryAmount.textContent = formatCurrency(totalReleasedAmount);
+  releaseSummaryCount.textContent = `${records.length} released loan${records.length === 1 ? "" : "s"}`;
+}
+
+async function renderRecords() {
+  const records = await getRecords();
+  const rows = getVisibleRecords(records);
+  const activeFilters = getActiveFilterSnapshot();
+  await updateReleasedSummaryStats();
+  console.debug("[render][main] Rendering records", {
+    totalRecords: records.length,
+    visibleRows: rows.length,
+    filters: {
+      name: activeFilters.name,
+      dateGranted: activeFilters.dateGranted,
+      dueDate: activeFilters.dueDate,
+      payable: activeFilters.payable,
+      sortBy: activeFilters.sortBy,
+    },
+    time: new Date().toISOString(),
+  });
+  const filtersSummary = `name=${activeFilters.name || "(none)"}, granted=${activeFilters.dateGranted || "(none)"}, due=${activeFilters.dueDate || "(none)"}, payable=${activeFilters.payable || "(none)"}, sort=${activeFilters.sortBy}`;
+  if (records.length === 0) {
+    setDiagnosticsPanel("warning", "No records found in Supabase yet.", latestSyncIssue || filtersSummary);
+  }
+  if (rows.length === 0) {
+    body.innerHTML = '<tr><td colspan="15" class="empty">No records yet.</td></tr>';
+    const hasActiveFilter = hasActiveFilters(activeFilters);
+    if (records.length > 0 && hasActiveFilter) {
+      setDiagnosticsPanel(
+        "error",
+        "Records exist but current filters hide them.",
+        `Tip: click Reset Filters. Active filters: ${filtersSummary}`
+      );
+    } else if (records.length > 0) {
+      setDiagnosticsPanel(
+        "warning",
+        "Records exist but nothing is currently visible.",
+        latestSyncIssue || filtersSummary
+      );
+    }
+    setSyncStatus("ok", hasActiveFilter ? "rendered (0 visible, filters active)" : "rendered (0 visible)");
+    initializeDatePickers();
+    return;
+  }
+  body.innerHTML = rows
+    .map(
+      ({ record, index, dueDate, effectiveDueDate, isPastDue, daysPastDue }) => {
+        // ...existing code...
+      }
+    )
+    .join("");
+  initializeDatePickers();
+  setDiagnosticsPanel("ok", `Showing ${rows.length} visible record${rows.length === 1 ? "" : "s"} from ${records.length} total.`, latestSyncIssue || filtersSummary);
+  setSyncStatus("ok", `rendered (${rows.length} visible)`);
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const formData = new FormData(form);
+  // ...existing code...
+  let records = await getRecords();
+  records.unshift(nextRecord);
+  await setRecords(records);
+  await renderRecords();
+
+  form.reset();
+  updateCoMakerFieldsVisibility();
+  showMessage("Loan record saved.", "success");
+  showToast("Loan record saved", "success");
+});
+
+clearBtn.addEventListener("click", async () => {
+  const confirmed = window.confirm("Delete all saved records?");
+  if (!confirmed) {
+    return;
+  }
+  await setRecords([]);
+  await renderRecords();
+  showMessage("All records deleted.", "success");
+});
+
+// Initial load
+
+window.addEventListener("DOMContentLoaded", () => {
+  renderRecords();
+});
 
 const STORAGE_KEY = "mgi_loan_records";
 const LOGIN_SESSION_KEY = "mgi_logged_in";
