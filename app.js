@@ -85,6 +85,10 @@ let writeOffPasswordResolver = null;
 let paymentEntryRowIndex = -1;
 let pendingPaymentConfirm = null;
 let syncStatusElement = null;
+let diagnosticsPanelElement = null;
+let diagnosticsTextElement = null;
+let diagnosticsMetaElement = null;
+let latestSyncIssue = "";
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -125,6 +129,122 @@ function setSyncStatus(state, detail) {
   }
 
   badge.textContent = detail ? `Sync: ${detail}` : "Sync: idle";
+}
+
+function getActiveFilterSnapshot() {
+  return {
+    name: String(filterNameInput?.value || "").trim(),
+    dateGranted: normalizeDateSearchValue(getDateFilterValue(filterDateGrantedInput)),
+    dueDate: normalizeDateSearchValue(getDateFilterValue(filterDueDateInput)),
+    payable: String(filterPayableSelect?.value || "").trim(),
+    sortBy: String(sortBySelect?.value || "nameAsc").trim(),
+  };
+}
+
+function hasActiveFilters(filters) {
+  return (
+    Boolean(filters.name) ||
+    Boolean(filters.dateGranted) ||
+    Boolean(filters.dueDate) ||
+    Boolean(filters.payable) ||
+    filters.sortBy === "pastDue"
+  );
+}
+
+function clearAllRecordFilters() {
+  if (filterNameInput) {
+    filterNameInput.value = "";
+  }
+  if (filterDateGrantedInput) {
+    filterDateGrantedInput.value = "";
+    filterDateGrantedInput._flatpickr?.clear();
+  }
+  if (filterDueDateInput) {
+    filterDueDateInput.value = "";
+    filterDueDateInput._flatpickr?.clear();
+  }
+  if (filterPayableSelect) {
+    filterPayableSelect.value = "";
+  }
+  if (sortBySelect) {
+    sortBySelect.value = "nameAsc";
+  }
+  renderRecords();
+}
+
+function ensureDiagnosticsPanelElement() {
+  if (
+    diagnosticsPanelElement &&
+    diagnosticsTextElement &&
+    diagnosticsMetaElement &&
+    document.body.contains(diagnosticsPanelElement)
+  ) {
+    return diagnosticsPanelElement;
+  }
+
+  const recordsPanel = document.querySelector(".records-panel");
+  if (!recordsPanel) {
+    return null;
+  }
+
+  const panel = document.createElement("div");
+  panel.className = "sync-diagnostics-panel is-info";
+
+  const title = document.createElement("strong");
+  title.className = "sync-diagnostics-title";
+  title.textContent = "Diagnostics";
+
+  const text = document.createElement("p");
+  text.className = "sync-diagnostics-text";
+  text.textContent = "Waiting for sync information...";
+
+  const meta = document.createElement("p");
+  meta.className = "sync-diagnostics-meta";
+  meta.textContent = "";
+
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "btn-secondary sync-diagnostics-reset";
+  resetBtn.textContent = "Reset Filters";
+  resetBtn.addEventListener("click", clearAllRecordFilters);
+
+  panel.appendChild(title);
+  panel.appendChild(text);
+  panel.appendChild(meta);
+  panel.appendChild(resetBtn);
+
+  const tableHead = recordsPanel.querySelector(".table-head");
+  if (tableHead?.nextSibling) {
+    recordsPanel.insertBefore(panel, tableHead.nextSibling);
+  } else {
+    recordsPanel.appendChild(panel);
+  }
+
+  diagnosticsPanelElement = panel;
+  diagnosticsTextElement = text;
+  diagnosticsMetaElement = meta;
+  return panel;
+}
+
+function setDiagnosticsPanel(type, text, metaText) {
+  const panel = ensureDiagnosticsPanelElement();
+  if (!panel || !diagnosticsTextElement || !diagnosticsMetaElement) {
+    return;
+  }
+
+  panel.classList.remove("is-info", "is-ok", "is-warning", "is-error");
+  if (type === "ok") {
+    panel.classList.add("is-ok");
+  } else if (type === "warning") {
+    panel.classList.add("is-warning");
+  } else if (type === "error") {
+    panel.classList.add("is-error");
+  } else {
+    panel.classList.add("is-info");
+  }
+
+  diagnosticsTextElement.textContent = text || "";
+  diagnosticsMetaElement.textContent = metaText || "";
 }
 
 function getRecords() {
@@ -175,6 +295,8 @@ async function loadRecordsFromServer() {
     });
     if (!res.ok) {
       console.error("[sync][main] Fetch failed", { status: res.status, statusText: res.statusText });
+      latestSyncIssue = `Server error ${res.status}: ${res.statusText || "Request failed"}`;
+      setDiagnosticsPanel("error", "Cannot load latest records from server.", latestSyncIssue);
       setSyncStatus("error", `server error (${res.status})`);
       return;
     }
@@ -183,6 +305,7 @@ async function loadRecordsFromServer() {
     if (Array.isArray(data.payload)) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
       console.info("[sync][main] Fetch success", { records: data.payload.length });
+      latestSyncIssue = "";
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
       return;
     }
@@ -191,15 +314,20 @@ async function loadRecordsFromServer() {
       // If server has no saved state yet, reset local cache to keep devices consistent.
       localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
       console.info("[sync][main] Server has no payload yet");
+      latestSyncIssue = "";
       setSyncStatus("ok", "updated (0 records)");
       return;
     }
 
     console.warn("[sync][main] Unexpected payload shape", { payloadType: typeof data.payload });
+    latestSyncIssue = "Invalid server payload format.";
+    setDiagnosticsPanel("error", "Server returned an invalid payload.", latestSyncIssue);
     setSyncStatus("error", "invalid server payload");
   } catch {
     // Network issue — fall back to local data
     console.error("[sync][main] Network error while fetching state");
+    latestSyncIssue = "Network error while loading server data.";
+    setDiagnosticsPanel("error", "Network problem while syncing.", latestSyncIssue);
     setSyncStatus("error", "offline, using local data");
   }
 }
@@ -2090,33 +2218,45 @@ function openPaymentEntryModal(rowIndex, record) {
 function renderRecords() {
   const records = getRecords();
   const rows = getVisibleRecords(records);
-  const activeNameFilter = String(filterNameInput?.value || "").trim();
-  const activeGrantedFilter = normalizeDateSearchValue(getDateFilterValue(filterDateGrantedInput));
-  const activeDueFilter = normalizeDateSearchValue(getDateFilterValue(filterDueDateInput));
-  const activePayableFilter = String(filterPayableSelect?.value || "").trim();
-  const activeSort = String(sortBySelect?.value || "nameAsc").trim();
+  const activeFilters = getActiveFilterSnapshot();
   updateReleasedSummaryStats();
   console.debug("[render][main] Rendering records", {
     totalRecords: records.length,
     visibleRows: rows.length,
     filters: {
-      name: activeNameFilter,
-      dateGranted: activeGrantedFilter,
-      dueDate: activeDueFilter,
-      payable: activePayableFilter,
-      sortBy: activeSort,
+      name: activeFilters.name,
+      dateGranted: activeFilters.dateGranted,
+      dueDate: activeFilters.dueDate,
+      payable: activeFilters.payable,
+      sortBy: activeFilters.sortBy,
     },
     time: new Date().toISOString(),
   });
 
+  const filtersSummary = `name=${activeFilters.name || "(none)"}, granted=${activeFilters.dateGranted || "(none)"}, due=${activeFilters.dueDate || "(none)"}, payable=${activeFilters.payable || "(none)"}, sort=${activeFilters.sortBy}`;
+
+  if (records.length === 0) {
+    setDiagnosticsPanel("warning", "No records found in this browser storage yet.", latestSyncIssue || filtersSummary);
+  }
+
   if (rows.length === 0) {
     body.innerHTML = '<tr><td colspan="15" class="empty">No records yet.</td></tr>';
-    const hasActiveFilter =
-      Boolean(activeNameFilter) ||
-      Boolean(activeGrantedFilter) ||
-      Boolean(activeDueFilter) ||
-      Boolean(activePayableFilter) ||
-      activeSort === "pastDue";
+    const hasActiveFilter = hasActiveFilters(activeFilters);
+
+    if (records.length > 0 && hasActiveFilter) {
+      setDiagnosticsPanel(
+        "error",
+        "Records exist but current filters hide them in this browser.",
+        `Tip: click Reset Filters. Active filters: ${filtersSummary}`
+      );
+    } else if (records.length > 0) {
+      setDiagnosticsPanel(
+        "warning",
+        "Records exist but nothing is currently visible.",
+        latestSyncIssue || filtersSummary
+      );
+    }
+
     setSyncStatus("ok", hasActiveFilter ? "rendered (0 visible, filters active)" : "rendered (0 visible)");
     initializeDatePickers();
     return;
@@ -2246,6 +2386,7 @@ function renderRecords() {
     .join("");
 
   initializeDatePickers();
+  setDiagnosticsPanel("ok", `Showing ${rows.length} visible record${rows.length === 1 ? "" : "s"} from ${records.length} total.`, latestSyncIssue || filtersSummary);
   setSyncStatus("ok", `rendered (${rows.length} visible)`);
 }
 
