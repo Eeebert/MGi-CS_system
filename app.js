@@ -1206,8 +1206,17 @@ function getDateFilterValue(inputElement) {
   }
 
   const fp = inputElement._flatpickr;
-  const altValue = fp?.altInput?.value;
-  return String(inputElement.value || altValue || "").trim();
+  const rawValue = String(inputElement.value || "").trim();
+  if (rawValue) {
+    return rawValue;
+  }
+
+  const selectedDate = fp?.selectedDates?.[0];
+  if (selectedDate instanceof Date && !Number.isNaN(selectedDate.getTime())) {
+    return toIsoDate(selectedDate);
+  }
+
+  return "";
 }
 
 async function getImageDataUrl(imagePath) {
@@ -2081,16 +2090,34 @@ function openPaymentEntryModal(rowIndex, record) {
 function renderRecords() {
   const records = getRecords();
   const rows = getVisibleRecords(records);
+  const activeNameFilter = String(filterNameInput?.value || "").trim();
+  const activeGrantedFilter = normalizeDateSearchValue(getDateFilterValue(filterDateGrantedInput));
+  const activeDueFilter = normalizeDateSearchValue(getDateFilterValue(filterDueDateInput));
+  const activePayableFilter = String(filterPayableSelect?.value || "").trim();
+  const activeSort = String(sortBySelect?.value || "nameAsc").trim();
   updateReleasedSummaryStats();
   console.debug("[render][main] Rendering records", {
     totalRecords: records.length,
     visibleRows: rows.length,
+    filters: {
+      name: activeNameFilter,
+      dateGranted: activeGrantedFilter,
+      dueDate: activeDueFilter,
+      payable: activePayableFilter,
+      sortBy: activeSort,
+    },
     time: new Date().toISOString(),
   });
 
   if (rows.length === 0) {
     body.innerHTML = '<tr><td colspan="15" class="empty">No records yet.</td></tr>';
-    setSyncStatus("ok", "rendered (0 visible)");
+    const hasActiveFilter =
+      Boolean(activeNameFilter) ||
+      Boolean(activeGrantedFilter) ||
+      Boolean(activeDueFilter) ||
+      Boolean(activePayableFilter) ||
+      activeSort === "pastDue";
+    setSyncStatus("ok", hasActiveFilter ? "rendered (0 visible, filters active)" : "rendered (0 visible)");
     initializeDatePickers();
     return;
   }
