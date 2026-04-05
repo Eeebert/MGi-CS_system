@@ -1,5 +1,6 @@
 const STORAGE_KEY = "mgi_loan_records";
 const LOGIN_SESSION_KEY = "mgi_logged_in";
+const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
 
 const portfolioTotal = document.getElementById("portfolio-total");
@@ -29,6 +30,12 @@ const typeEmergencyBalance = document.getElementById("type-emergency-balance");
 const typeNotListedBalance = document.getElementById("type-not-listed-balance");
 const backDashboardBtn = document.getElementById("back-dashboard");
 const typeAccountOfficer = document.getElementById("type-account-officer");
+const officerCountJunJun = document.getElementById("officer-count-junjun");
+const officerCountAga = document.getElementById("officer-count-aga");
+const officerCountJomar = document.getElementById("officer-count-jomar");
+const officerCountJames = document.getElementById("officer-count-james");
+const officerCountJambi = document.getElementById("officer-count-jambi");
+const officerCountMariaJoy = document.getElementById("officer-count-mariajoy");
 const typeSettled = document.getElementById("type-settled");
 const typeAccountOfficerBalance = document.getElementById("type-account-officer-balance");
 const typeSettledBalance = document.getElementById("type-settled-balance");
@@ -308,6 +315,13 @@ function renderDailyCollections(records) {
   const selectedDate = String(portfolioDateFilterInput?.value || "").trim();
   const selectedMonth = String(portfolioMonthFilterInput?.value || "").trim();
 
+  // Only show daily collection when a specific date is chosen
+  if (!selectedDate) {
+    if (dailyPrincipalCollected) dailyPrincipalCollected.textContent = formatCurrency(0);
+    if (dailyInterestCollected) dailyInterestCollected.textContent = formatCurrency(0);
+    return;
+  }
+
   const { principal, interest } = getTotalDailyCollections(records, selectedDate, selectedMonth);
 
   if (dailyPrincipalCollected) {
@@ -407,6 +421,30 @@ function renderTypeBreakdown(records) {
   if (typeNotListedBalance) typeNotListedBalance.textContent = formatCurrency(balances.notListed);
   if (typeAccountOfficerBalance) typeAccountOfficerBalance.textContent = formatCurrency(accountOfficerBalance);
   if (typeSettledBalance) typeSettledBalance.textContent = formatCurrency(settledBalance);
+}
+
+function getOfficerOpenLoanCount(officerName) {
+  try {
+    const key = `mgi_officer_records_${officerName}`;
+    const records = JSON.parse(localStorage.getItem(key)) || [];
+    return records.filter((record) => computeOutstandingBalance(record) > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
+function renderOfficerCounts() {
+  const officers = [
+    { el: officerCountJunJun,   name: "JunJun" },
+    { el: officerCountAga,      name: "Aga" },
+    { el: officerCountJomar,    name: "Jomar" },
+    { el: officerCountJames,    name: "James" },
+    { el: officerCountJambi,    name: "Jambi" },
+    { el: officerCountMariaJoy, name: "Maria Joy" },
+  ];
+  officers.forEach(({ el, name }) => {
+    if (el) el.textContent = String(getOfficerOpenLoanCount(name));
+  });
 }
 
 function getPortfolioFilteredRecords(records) {
@@ -518,6 +556,8 @@ function renderPortfolio() {
   renderTypeBreakdown(records);
 
   renderDailyCollections(allRecords);
+
+  renderOfficerCounts();
 }
 
 portfolioDateFilterInput?.addEventListener("change", () => {
@@ -590,7 +630,11 @@ drawerOverlay?.addEventListener("click", closeDrawer);
 
 drawerLogoutBtn?.addEventListener("click", () => {
   closeDrawer();
-  portfolioLogoutBtn?.click();
+  const confirmed = window.confirm("Log out now?");
+  if (!confirmed) return;
+  sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+  sessionStorage.clear();
+  window.location.href = "index.html";
 });
 
 themeOptions.forEach((option) => {
@@ -601,21 +645,7 @@ themeOptions.forEach((option) => {
   });
 });
 
-backDashboardBtn?.addEventListener("click", () => {
-  window.location.href = "index.html";
-});
-
-portfolioLogoutBtn?.addEventListener("click", () => {
-  const confirmed = window.confirm("Log out now?");
-  if (!confirmed) {
-    return;
-  }
-  sessionStorage.removeItem(LOGIN_SESSION_KEY);
-  sessionStorage.clear();
-  window.location.href = "index.html";
-});
-
-if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
+if (sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
   window.location.href = "index.html";
 } else {
   initializeTheme();

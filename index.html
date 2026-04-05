@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f141a" />
     <title>Morris Gilbert Inso - Credit Services</title>
+    <script>
+      // If portfolio user, redirect to portfolio page
+      if (sessionStorage.getItem("mgi_portfolio_logged_in") === "1") {
+        window.location.href = "portfolio.html";
+      }
+    </script>
     <link rel="stylesheet" href="styles.css" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" href="images/loading_logo.png" />
@@ -50,7 +56,6 @@
       <div class="topbar-actions">
         <button id="toggle-loan-entry" class="btn-secondary" type="button" aria-expanded="false">Loan Application</button>
         <button id="toggle-runner" class="btn-secondary" type="button">Account Officer</button>
-        <button id="toggle-release-summary" class="btn-secondary" type="button">Portfolio</button>
         <button id="main-hamburger" class="btn-hamburger" type="button" aria-label="Toggle content" aria-expanded="true">
           <span></span><span></span><span></span>
         </button>

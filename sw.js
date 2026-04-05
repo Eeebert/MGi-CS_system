@@ -1,4 +1,4 @@
-const CACHE_NAME = "mgi-cs-v2";
+const CACHE_NAME = "mgi-cs-v3";
 const ASSETS = [
   "/",
   "/index.html",
@@ -15,6 +15,9 @@ const ASSETS = [
   "/images/loading_logo.png",
   "/images/mgi_logo.png"
 ];
+
+// Files that should always be fetched fresh from network (network-first)
+const NETWORK_FIRST = [".html", ".js", ".css", "manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -37,23 +40,41 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
+  const url = new URL(event.request.url);
+  const isNetworkFirst = NETWORK_FIRST.some((ext) => url.pathname.endsWith(ext)) || url.pathname === "/";
 
-      return fetch(event.request)
+  if (isNetworkFirst) {
+    // Network-first: always try to get latest from server, fall back to cache if offline
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
           if (!response || response.status !== 200 || response.type !== "basic") {
             return response;
           }
-
           const cloned = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
           return response;
         })
-        .catch(() => caches.match("/index.html"));
-    })
-  );
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html")))
+    );
+  } else {
+    // Cache-first for images and other static assets
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) {
+          return cached;
+        }
+        return fetch(event.request)
+          .then((response) => {
+            if (!response || response.status !== 200 || response.type !== "basic") {
+              return response;
+            }
+            const cloned = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
+            return response;
+          })
+          .catch(() => caches.match("/index.html"));
+      })
+    );
+  }
 });

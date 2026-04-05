@@ -55,6 +55,32 @@ function getRecords() {
 
 function setRecords(records) {
   localStorage.setItem(getOfficerStorageKey(), JSON.stringify(records));
+  syncRecordsToServer(records);
+}
+
+async function syncRecordsToServer(records) {
+  try {
+    await fetch("/api/state/" + getOfficerStorageKey(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: records }),
+    });
+  } catch {
+    // Server unavailable — data is safe in localStorage
+  }
+}
+
+async function loadRecordsFromServer() {
+  try {
+    const res = await fetch("/api/state/" + getOfficerStorageKey());
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data.payload) && data.payload.length > 0) {
+      localStorage.setItem(getOfficerStorageKey(), JSON.stringify(data.payload));
+    }
+  } catch {
+    // Network issue — fall back to local data
+  }
 }
 
 function formatCurrency(value) {
@@ -674,5 +700,12 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
   initializeTheme();
   setLoanFormVisibility(true);
   syncModeOfPaymentWithLoanType();
-  renderRecords();
+
+  // Pull latest data from server then render
+  loadRecordsFromServer().then(() => renderRecords());
+
+  // Keep synced with server every 5 seconds so all devices stay in sync
+  setInterval(() => {
+    loadRecordsFromServer().then(() => renderRecords());
+  }, 5000);
 }

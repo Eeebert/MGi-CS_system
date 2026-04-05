@@ -1,4 +1,9 @@
 (function () {
+  // Skip PWA install button on portfolio page
+  if (window.location.pathname.includes("portfolio.html")) {
+    return;
+  }
+
   let deferredPrompt = null;
   let installBtn = null;
 

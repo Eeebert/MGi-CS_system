@@ -62,11 +62,14 @@ const logoutConfirmYesBtn = document.getElementById("logout-confirm-yes");
 
 const STORAGE_KEY = "mgi_loan_records";
 const LOGIN_SESSION_KEY = "mgi_logged_in";
+const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
 const AUTH_USERNAME = "username";
 const AUTH_PASSWORD = "123";
+const PORTFOLIO_USERNAME = "portfolio";
+const PORTFOLIO_PASSWORD = "123";
 const WRITE_OFF_PASSWORD = AUTH_PASSWORD;
-const AUTO_REFRESH_MS = 30 * 1000;
+const AUTO_REFRESH_MS = 5 * 1000;
 const EXPORT_ADDRESS_TEXT = "TALISAY, SANTANDER, CEBU";
 const LOAN_TYPE_MONTHLY_OPEN = "monthly_open";
 const LOAN_TYPE_BI_MONTHLY_OPEN = "bi_monthly_open";
@@ -2168,6 +2171,10 @@ function updateCoMakerFieldsVisibility() {
   }
 }
 
+function updatePortfolioButtonVisibility() {
+  // Portfolio button removed from main dashboard - only accessible via portfolio login
+}
+
 function updateLoanEntryVisibility(open) {
   if (!loanEntryPanel || !toggleLoanEntryBtn || !mainContainer) {
     return;
@@ -2209,7 +2216,13 @@ function setLoginMessage(text, isSuccess) {
 }
 
 function authenticateUser(username, password) {
-  return username === AUTH_USERNAME && password === AUTH_PASSWORD;
+  if (username === AUTH_USERNAME && password === AUTH_PASSWORD) {
+    return "main";
+  }
+  if (username === PORTFOLIO_USERNAME && password === PORTFOLIO_PASSWORD) {
+    return "portfolio";
+  }
+  return null;
 }
 
 form.addEventListener("submit", (event) => {
@@ -3230,10 +3243,21 @@ loginForm?.addEventListener("submit", (event) => {
   const username = (loginUsernameInput?.value || "").trim();
   const password = loginPasswordInput?.value || "";
 
-  if (authenticateUser(username, password)) {
+  const authType = authenticateUser(username, password);
+  if (authType === "main") {
     sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+    sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
     setLoginMessage("Login successful.", true);
     hideLoadingScreen();
+    updatePortfolioButtonVisibility();
+    return;
+  }
+  
+  if (authType === "portfolio") {
+    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
+    sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    // Redirect to portfolio page immediately
+    window.location.href = "portfolio.html";
     return;
   }
 
@@ -3245,11 +3269,13 @@ updateInterestRateForLoanType();
 updateModeOfPaymentForLoanType();
 updateLoanEntryVisibility(false);
 updateReleaseSummaryVisibility(false);
+updatePortfolioButtonVisibility();
 testDateInput.value = toIsoDate(new Date());
 
 // Keep totals and overdue values current without manual browser refresh.
+// Also sync with server so changes from other devices appear automatically.
 setInterval(() => {
-  renderRecords();
+  loadRecordsFromServer().then(() => renderRecords());
 }, AUTO_REFRESH_MS);
 
 // If records are changed in another tab, refresh this page automatically.

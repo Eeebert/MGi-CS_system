@@ -6,6 +6,17 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "1mb" }));
+
+// Prevent browsers from caching HTML, JS, and CSS so updates deploy immediately
+app.use((req, res, next) => {
+  if (/\.(html|js|css)$/.test(req.path)) {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+  }
+  next();
+});
+
 app.use(express.static(__dirname));
 
 const databaseUrl = process.env.DATABASE_URL;
