@@ -6,6 +6,7 @@
 
   let deferredPrompt = null;
   let installBtn = null;
+  let hasControllerChanged = false;
 
   function isStandaloneMode() {
     return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -46,13 +47,67 @@
     btn.style.display = show ? "inline-flex" : "none";
   }
 
+  function activateWaitingWorker(worker) {
+    if (!worker) {
+      return;
+    }
+    worker.postMessage({ type: "SKIP_WAITING" });
+  }
+
+  function watchRegistration(registration) {
+    if (!registration) {
+      return;
+    }
+
+    if (registration.waiting) {
+      activateWaitingWorker(registration.waiting);
+    }
+
+    registration.addEventListener("updatefound", () => {
+      const newWorker = registration.installing;
+      if (!newWorker) {
+        return;
+      }
+
+      newWorker.addEventListener("statechange", () => {
+        if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+          activateWaitingWorker(newWorker);
+        }
+      });
+    });
+  }
+
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) {
       return;
     }
 
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (hasControllerChanged) {
+        return;
+      }
+      hasControllerChanged = true;
+      window.location.reload();
+    });
+
+    window.addEventListener("load", async () => {
+      try {
+        const registration = await navigator.serviceWorker.register("/sw.js");
+        watchRegistration(registration);
+        registration.update().catch(() => {});
+
+        window.addEventListener("focus", () => {
+          registration.update().catch(() => {});
+        });
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") {
+            registration.update().catch(() => {});
+          }
+        });
+      } catch {
+        // Ignore registration failures and continue without PWA features.
+      }
     });
   }
 
