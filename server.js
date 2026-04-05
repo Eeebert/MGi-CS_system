@@ -95,10 +95,16 @@ app.get("/api/state/:id", async (req, res) => {
     const result = await pool.query("SELECT payload FROM app_state WHERE id = $1", [id]);
 
     if (result.rowCount === 0) {
-      return res.json({ payload: null });
+      // Always return an array for empty state
+      return res.json({ payload: [] });
     }
 
-    return res.json({ payload: result.rows[0].payload });
+    let payload = result.rows[0].payload;
+    // If payload is not an array, treat as empty array for compatibility
+    if (!Array.isArray(payload)) {
+      payload = [];
+    }
+    return res.json({ payload });
   } catch (error) {
     console.error("GET /api/state error:", error.message);
     return res.status(500).json({ error: "Database query failed" });
