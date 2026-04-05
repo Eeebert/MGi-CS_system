@@ -319,9 +319,21 @@ async function loadRecordsFromServer() {
       return;
     }
 
-    console.warn("[sync][main] Unexpected payload shape", { payloadType: typeof data.payload });
-    latestSyncIssue = "Invalid server payload format.";
-    setDiagnosticsPanel("error", "Server returned an invalid payload.", latestSyncIssue);
+    // If payload is an object, log and display its structure for debugging
+    let payloadType = typeof data.payload;
+    let payloadKeys = data.payload && typeof data.payload === "object" ? Object.keys(data.payload) : null;
+    let payloadPreview = "";
+    try {
+      payloadPreview = JSON.stringify(data.payload, null, 2);
+    } catch {}
+
+    console.warn("[sync][main] Unexpected payload shape", { payloadType, payloadKeys, payloadPreview });
+    latestSyncIssue = `Invalid server payload format. Type: ${payloadType}, Keys: ${payloadKeys ? payloadKeys.join(", ") : "-"}`;
+    setDiagnosticsPanel(
+      "error",
+      "Server returned an invalid payload. See below for details.",
+      `${latestSyncIssue}\nPreview: ${payloadPreview}`
+    );
     setSyncStatus("error", "invalid server payload");
   } catch {
     // Network issue — fall back to local data
