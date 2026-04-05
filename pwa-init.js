@@ -92,7 +92,9 @@
 
     window.addEventListener("load", async () => {
       try {
-        const registration = await navigator.serviceWorker.register("/sw.js");
+        const registration = await navigator.serviceWorker.register("/sw.js", {
+          updateViaCache: "none",
+        });
         watchRegistration(registration);
         registration.update().catch(() => {});
 

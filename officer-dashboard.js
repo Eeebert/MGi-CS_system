@@ -40,6 +40,48 @@ const dashboardTotalAmount = document.getElementById("dashboard-total-amount");
 
 let toastTimer;
 let isLoanFormVisible = true;
+let syncStatusElement = null;
+
+function ensureSyncStatusElement() {
+  if (syncStatusElement && document.body.contains(syncStatusElement)) {
+    return syncStatusElement;
+  }
+
+  const topbarActions = document.querySelector(".topbar-actions");
+  if (!topbarActions) {
+    return null;
+  }
+
+  const badge = document.createElement("span");
+  badge.className = "sync-status-badge is-idle";
+  badge.setAttribute("role", "status");
+  badge.setAttribute("aria-live", "polite");
+  badge.textContent = "Sync: idle";
+  topbarActions.prepend(badge);
+  syncStatusElement = badge;
+  return badge;
+}
+
+function setSyncStatus(state, detail) {
+  const badge = ensureSyncStatusElement();
+  if (!badge) {
+    return;
+  }
+
+  badge.classList.remove("is-idle", "is-syncing", "is-ok", "is-error");
+
+  if (state === "syncing") {
+    badge.classList.add("is-syncing");
+  } else if (state === "ok") {
+    badge.classList.add("is-ok");
+  } else if (state === "error") {
+    badge.classList.add("is-error");
+  } else {
+    badge.classList.add("is-idle");
+  }
+
+  badge.textContent = detail ? `Sync: ${detail}` : "Sync: idle";
+}
 
 function getOfficerStorageKey() {
   return `mgi_officer_records_${currentOfficer}`;
@@ -75,21 +117,51 @@ async function syncRecordsToServer(records) {
 }
 
 async function loadRecordsFromServer() {
+  setSyncStatus("syncing", "syncing...");
+  console.info("[sync][officer] Fetch start", {
+    officer: currentOfficer,
+    storageKey: getOfficerStorageKey(),
+    online: navigator.onLine,
+    time: new Date().toISOString(),
+  });
+
   try {
-    const res = await fetch("/api/state/" + getOfficerStorageKey(), { cache: "no-store" });
-    if (!res.ok) return;
+    const stateUrl = "/api/state/" + getOfficerStorageKey() + "?t=" + Date.now();
+    const res = await fetch(stateUrl, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
+    });
+    if (!res.ok) {
+      console.error("[sync][officer] Fetch failed", { status: res.status, statusText: res.statusText });
+      setSyncStatus("error", `server error (${res.status})`);
+      return;
+    }
+
     const data = await res.json();
     if (Array.isArray(data.payload)) {
       localStorage.setItem(getOfficerStorageKey(), JSON.stringify(data.payload));
+      console.info("[sync][officer] Fetch success", { officer: currentOfficer, records: data.payload.length });
+      setSyncStatus("ok", `updated (${data.payload.length} records)`);
       return;
     }
 
     if (data.payload === null) {
       // If server has no saved state yet, reset local cache to keep devices consistent.
       localStorage.setItem(getOfficerStorageKey(), JSON.stringify([]));
+      console.info("[sync][officer] Server has no payload yet", { officer: currentOfficer });
+      setSyncStatus("ok", "updated (0 records)");
+      return;
     }
+
+    console.warn("[sync][officer] Unexpected payload shape", { payloadType: typeof data.payload });
+    setSyncStatus("error", "invalid server payload");
   } catch {
     // Network issue — fall back to local data
+    console.error("[sync][officer] Network error while fetching state", { officer: currentOfficer });
+    setSyncStatus("error", "offline, using local data");
   }
 }
 
@@ -339,6 +411,11 @@ function renderRecords() {
   const records = getRecords();
   const nameFilter = String(filterNameInput?.value || "").toLowerCase().trim();
   const dateFilter = String(filterDateGrantedInput?.value || "").trim();
+  console.debug("[render][officer] Rendering records", {
+    officer: currentOfficer,
+    totalRecords: records.length,
+    time: new Date().toISOString(),
+  });
 
   let filtered = records.map((record, index) => ({ record, index })).filter(({ record }) => {
     const matchesName = nameFilter === "" || String(record.name || "").toLowerCase().includes(nameFilter);
@@ -359,7 +436,8 @@ function renderRecords() {
 
   if (filtered.length === 0) {
     body.innerHTML = '<tr><td colspan="13" class="empty">No records yet.</td></tr>';
-      updateDashboardStats();
+    setSyncStatus("ok", "rendered (0 visible)");
+    updateDashboardStats();
     return;
   }
 
@@ -410,6 +488,7 @@ function renderRecords() {
     .join("");
   
   updateDashboardStats();
+  setSyncStatus("ok", `rendered (${filtered.length} visible)`);
 }
 
 function getTypeLabel(payableWithin) {
@@ -708,6 +787,13 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
   }
 
   initializeTheme();
+  ensureSyncStatusElement();
+  console.info("[session][officer] Startup", {
+    officer: currentOfficer,
+    loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",
+    online: navigator.onLine,
+    userAgent: navigator.userAgent,
+  });
   setLoanFormVisibility(true);
   syncModeOfPaymentWithLoanType();
 

@@ -110,6 +110,44 @@ body {
   gap: 0.32rem;
 }
 
+.sync-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0.2rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(22, 59, 44, 0.15);
+  background: rgba(255, 255, 255, 0.66);
+  color: #173a2d;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sync-status-badge.is-idle {
+  background: rgba(255, 255, 255, 0.66);
+  color: #2f4d40;
+}
+
+.sync-status-badge.is-syncing {
+  background: rgba(245, 170, 58, 0.18);
+  border-color: rgba(245, 170, 58, 0.45);
+  color: #7f4a00;
+}
+
+.sync-status-badge.is-ok {
+  background: rgba(77, 196, 112, 0.17);
+  border-color: rgba(77, 196, 112, 0.4);
+  color: #0f5132;
+}
+
+.sync-status-badge.is-error {
+  background: rgba(221, 78, 78, 0.18);
+  border-color: rgba(221, 78, 78, 0.45);
+  color: #7c1d1d;
+}
+
 .btn-hamburger {
   display: flex;
   flex-direction: column;
@@ -1499,6 +1537,17 @@ th {
     width: 100%;
     justify-content: flex-end;
     margin-top: 0.3rem;
+  }
+
+  .sync-status-badge {
+    order: -1;
+    margin-right: auto;
+    font-size: 0.6rem;
+    min-height: 28px;
+    padding: 0.18rem 0.42rem;
+    max-width: 48vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .topbar-actions button {

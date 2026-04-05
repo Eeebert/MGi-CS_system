@@ -84,6 +84,48 @@ let isReleaseSummaryOpen = false;
 let writeOffPasswordResolver = null;
 let paymentEntryRowIndex = -1;
 let pendingPaymentConfirm = null;
+let syncStatusElement = null;
+
+function ensureSyncStatusElement() {
+  if (syncStatusElement && document.body.contains(syncStatusElement)) {
+    return syncStatusElement;
+  }
+
+  const topbarActions = document.querySelector(".topbar-actions");
+  if (!topbarActions) {
+    return null;
+  }
+
+  const badge = document.createElement("span");
+  badge.className = "sync-status-badge is-idle";
+  badge.setAttribute("role", "status");
+  badge.setAttribute("aria-live", "polite");
+  badge.textContent = "Sync: idle";
+  topbarActions.prepend(badge);
+  syncStatusElement = badge;
+  return badge;
+}
+
+function setSyncStatus(state, detail) {
+  const badge = ensureSyncStatusElement();
+  if (!badge) {
+    return;
+  }
+
+  badge.classList.remove("is-idle", "is-syncing", "is-ok", "is-error");
+
+  if (state === "syncing") {
+    badge.classList.add("is-syncing");
+  } else if (state === "ok") {
+    badge.classList.add("is-ok");
+  } else if (state === "error") {
+    badge.classList.add("is-error");
+  } else {
+    badge.classList.add("is-idle");
+  }
+
+  badge.textContent = detail ? `Sync: ${detail}` : "Sync: idle";
+}
 
 function getRecords() {
   try {
@@ -115,21 +157,50 @@ async function syncRecordsToServer(records) {
 }
 
 async function loadRecordsFromServer() {
+  setSyncStatus("syncing", "syncing...");
+  console.info("[sync][main] Fetch start", {
+    storageKey: STORAGE_KEY,
+    online: navigator.onLine,
+    time: new Date().toISOString(),
+  });
+
   try {
-    const res = await fetch("/api/state/" + STORAGE_KEY, { cache: "no-store" });
-    if (!res.ok) return;
+    const stateUrl = "/api/state/" + STORAGE_KEY + "?t=" + Date.now();
+    const res = await fetch(stateUrl, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
+    });
+    if (!res.ok) {
+      console.error("[sync][main] Fetch failed", { status: res.status, statusText: res.statusText });
+      setSyncStatus("error", `server error (${res.status})`);
+      return;
+    }
+
     const data = await res.json();
     if (Array.isArray(data.payload)) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+      console.info("[sync][main] Fetch success", { records: data.payload.length });
+      setSyncStatus("ok", `updated (${data.payload.length} records)`);
       return;
     }
 
     if (data.payload === null) {
       // If server has no saved state yet, reset local cache to keep devices consistent.
       localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      console.info("[sync][main] Server has no payload yet");
+      setSyncStatus("ok", "updated (0 records)");
+      return;
     }
+
+    console.warn("[sync][main] Unexpected payload shape", { payloadType: typeof data.payload });
+    setSyncStatus("error", "invalid server payload");
   } catch {
     // Network issue — fall back to local data
+    console.error("[sync][main] Network error while fetching state");
+    setSyncStatus("error", "offline, using local data");
   }
 }
 
@@ -2011,9 +2082,15 @@ function renderRecords() {
   const records = getRecords();
   const rows = getVisibleRecords(records);
   updateReleasedSummaryStats();
+  console.debug("[render][main] Rendering records", {
+    totalRecords: records.length,
+    visibleRows: rows.length,
+    time: new Date().toISOString(),
+  });
 
   if (rows.length === 0) {
     body.innerHTML = '<tr><td colspan="15" class="empty">No records yet.</td></tr>';
+    setSyncStatus("ok", "rendered (0 visible)");
     initializeDatePickers();
     return;
   }
@@ -2142,6 +2219,7 @@ function renderRecords() {
     .join("");
 
   initializeDatePickers();
+  setSyncStatus("ok", `rendered (${rows.length} visible)`);
 }
 
 function showMessage(text, type) {
@@ -3299,6 +3377,13 @@ renderRecords();
 initializeDatePickers();
 
 window.addEventListener("load", () => {
+  ensureSyncStatusElement();
+  console.info("[session][main] Startup", {
+    loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",
+    online: navigator.onLine,
+    userAgent: navigator.userAgent,
+  });
+
   // Pull latest data from the database, then re-render so all devices stay in sync
   loadRecordsFromServer().then(() => renderRecords());
 
