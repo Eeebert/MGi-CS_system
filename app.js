@@ -100,11 +100,15 @@ function setRecords(records) {
 
 async function syncRecordsToServer(records) {
   try {
-    await fetch("/api/state/" + STORAGE_KEY, {
+    const res = await fetch("/api/state/" + STORAGE_KEY, {
       method: "PUT",
+      cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payload: records }),
     });
+    if (!res.ok) {
+      throw new Error("Failed to sync records");
+    }
   } catch {
     // Server unavailable — data is safe in localStorage
   }
@@ -112,11 +116,17 @@ async function syncRecordsToServer(records) {
 
 async function loadRecordsFromServer() {
   try {
-    const res = await fetch("/api/state/" + STORAGE_KEY);
+    const res = await fetch("/api/state/" + STORAGE_KEY, { cache: "no-store" });
     if (!res.ok) return;
     const data = await res.json();
-    if (Array.isArray(data.payload) && data.payload.length > 0) {
+    if (Array.isArray(data.payload)) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+      return;
+    }
+
+    if (data.payload === null) {
+      // If server has no saved state yet, reset local cache to keep devices consistent.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
     }
   } catch {
     // Network issue — fall back to local data

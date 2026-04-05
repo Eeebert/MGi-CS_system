@@ -47,6 +47,14 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(event.request.url);
+
+  // Never cache API responses; always read latest server state.
+  if (url.pathname.startsWith("/api/")) {
+    const freshRequest = new Request(event.request, { cache: "no-store" });
+    event.respondWith(fetch(freshRequest));
+    return;
+  }
+
   const isNetworkFirst = NETWORK_FIRST.some((ext) => url.pathname.endsWith(ext)) || url.pathname === "/";
 
   if (isNetworkFirst) {

@@ -2,6 +2,8 @@ const path = require("path");
 const express = require("express");
 const { Pool } = require("pg");
 
+require("dotenv").config();
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -9,6 +11,12 @@ app.use(express.json({ limit: "1mb" }));
 
 // Prevent browsers from caching HTML, JS, and CSS so updates deploy immediately
 app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+  }
+
   if (/\.(html|js|css)$/.test(req.path)) {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.set("Pragma", "no-cache");
@@ -19,7 +27,10 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = (process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || "").trim() || null;
+const databaseProvider = process.env.SUPABASE_DB_URL
+  ? "supabase"
+  : (process.env.DATABASE_URL ? "postgres" : "none");
 
 let pool = null;
 if (databaseUrl) {
@@ -32,6 +43,8 @@ if (databaseUrl) {
   pool.on("error", (err) => {
     console.error("Unexpected database pool error:", err.message);
   });
+} else {
+  console.warn("Database is not configured. Set SUPABASE_DB_URL (recommended) or DATABASE_URL.");
 }
 
 async function ensureSchema() {
@@ -57,7 +70,7 @@ async function ensureSchema() {
 }
 
 app.get("/health", async (_req, res) => {
-  const db = { connected: false };
+  const db = { connected: false, provider: databaseProvider, configured: Boolean(databaseUrl) };
 
   if (pool) {
     try {
