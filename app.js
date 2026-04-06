@@ -128,11 +128,17 @@ let syncStatusElement = null;
 let diagnosticsPanelElement = null;
 let diagnosticsTextElement = null;
 let diagnosticsMetaElement = null;
+let diagnosticsDebugElement = null;
 let latestSyncIssue = "";
 let recordsCache = [];
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
+let syncDebugState = {
+  save: "idle",
+  fetch: "idle",
+  guard: "no",
+};
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -221,6 +227,7 @@ function ensureDiagnosticsPanelElement() {
     diagnosticsPanelElement &&
     diagnosticsTextElement &&
     diagnosticsMetaElement &&
+    diagnosticsDebugElement &&
     document.body.contains(diagnosticsPanelElement)
   ) {
     return diagnosticsPanelElement;
@@ -246,6 +253,10 @@ function ensureDiagnosticsPanelElement() {
   meta.className = "sync-diagnostics-meta";
   meta.textContent = "";
 
+  const debug = document.createElement("p");
+  debug.className = "sync-diagnostics-meta";
+  debug.textContent = "Debug: save=idle | fetch=idle | guard=no";
+
   const resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "btn-secondary sync-diagnostics-reset";
@@ -255,6 +266,7 @@ function ensureDiagnosticsPanelElement() {
   panel.appendChild(title);
   panel.appendChild(text);
   panel.appendChild(meta);
+  panel.appendChild(debug);
   panel.appendChild(resetBtn);
 
   const tableHead = recordsPanel.querySelector(".table-head");
@@ -267,6 +279,7 @@ function ensureDiagnosticsPanelElement() {
   diagnosticsPanelElement = panel;
   diagnosticsTextElement = text;
   diagnosticsMetaElement = meta;
+  diagnosticsDebugElement = debug;
   return panel;
 }
 
@@ -291,6 +304,18 @@ function setDiagnosticsPanel(type, text, metaText) {
   diagnosticsMetaElement.textContent = metaText || "";
 }
 
+function setSyncDebug(partial) {
+  syncDebugState = {
+    ...syncDebugState,
+    ...partial,
+  };
+  ensureDiagnosticsPanelElement();
+  if (!diagnosticsDebugElement) {
+    return;
+  }
+  diagnosticsDebugElement.textContent = `Debug: save=${syncDebugState.save} | fetch=${syncDebugState.fetch} | guard=${syncDebugState.guard}`;
+}
+
 function getRecords() {
   return Array.isArray(recordsCache) ? recordsCache : [];
 }
@@ -298,11 +323,13 @@ function getRecords() {
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
   lastLocalMutationAt = Date.now();
+  setSyncDebug({ save: `queued(${recordsCache.length})` });
   syncRecordsToServer(records);
 }
 
 async function syncRecordsToServer(records) {
   isServerWritePending = true;
+  setSyncDebug({ save: "pending" });
   try {
     const res = await fetchStateApi(STORAGE_KEY, {
       method: "PUT",
@@ -313,10 +340,12 @@ async function syncRecordsToServer(records) {
     if (!res.ok) {
       throw new Error("Failed to sync records");
     }
+    setSyncDebug({ save: `ok(${records.length})` });
   } catch {
     // Server-only mode: keep in-memory data for current session and show sync error.
     latestSyncIssue = "Cannot save to server right now.";
     setSyncStatus("error", "save failed");
+    setSyncDebug({ save: "failed" });
   } finally {
     isServerWritePending = false;
   }
@@ -324,6 +353,7 @@ async function syncRecordsToServer(records) {
 
 async function loadRecordsFromServer() {
   setSyncStatus("syncing", "syncing...");
+  setSyncDebug({ fetch: "start", guard: "no" });
   console.info("[sync][main] Fetch start", {
     storageKey: STORAGE_KEY,
     online: navigator.onLine,
@@ -343,6 +373,7 @@ async function loadRecordsFromServer() {
       latestSyncIssue = `Server error ${res.status}: ${res.statusText || "Request failed"}`;
       setDiagnosticsPanel("error", "Cannot load latest records from server.", latestSyncIssue);
       setSyncStatus("error", `server error (${res.status})`);
+      setSyncDebug({ fetch: `http-${res.status}` });
       return;
     }
 
@@ -358,17 +389,20 @@ async function loadRecordsFromServer() {
           cacheRecords: recordsCache.length,
         });
         setSyncStatus("syncing", "waiting server update");
+        setSyncDebug({ fetch: `count(${data.payload.length})`, guard: "yes" });
         return;
       }
       if (isServerWritePending) {
         console.info("[sync][main] Skipping server apply while save is pending");
         setSyncStatus("syncing", "save in progress");
+        setSyncDebug({ fetch: `count(${data.payload.length})`, guard: "write-pending" });
         return;
       }
       recordsCache = data.payload;
       console.info("[sync][main] Fetch success", { records: data.payload.length });
       latestSyncIssue = "";
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
+      setSyncDebug({ fetch: `ok(${data.payload.length})`, guard: "no" });
       return;
     }
 
@@ -377,6 +411,7 @@ async function loadRecordsFromServer() {
       console.info("[sync][main] Server has no payload yet");
       latestSyncIssue = "";
       setSyncStatus("ok", "updated (0 records)");
+      setSyncDebug({ fetch: "payload-null", guard: "no" });
       return;
     }
 
@@ -396,12 +431,14 @@ async function loadRecordsFromServer() {
       `${latestSyncIssue}\nPreview: ${payloadPreview}`
     );
     setSyncStatus("error", "invalid server payload");
+    setSyncDebug({ fetch: "invalid-payload" });
   } catch {
     // Network issue in server-only mode.
     console.error("[sync][main] Network error while fetching state");
     latestSyncIssue = "Network error while loading server data.";
     setDiagnosticsPanel("error", "Network problem while syncing.", latestSyncIssue);
     setSyncStatus("error", "offline (server-only mode)");
+    setSyncDebug({ fetch: "network-error" });
   }
 }
 
