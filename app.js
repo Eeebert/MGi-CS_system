@@ -131,6 +131,8 @@ let diagnosticsMetaElement = null;
 let latestSyncIssue = "";
 let recordsCache = [];
 let isServerWritePending = false;
+let lastLocalMutationAt = 0;
+const EMPTY_OVERWRITE_GUARD_MS = 20000;
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -295,6 +297,7 @@ function getRecords() {
 
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
+  lastLocalMutationAt = Date.now();
   syncRecordsToServer(records);
 }
 
@@ -345,6 +348,18 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const shouldGuardEmptyOverwrite = (
+        data.payload.length === 0 &&
+        recordsCache.length > 0 &&
+        Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
+      );
+      if (shouldGuardEmptyOverwrite) {
+        console.info("[sync][main] Ignoring empty server payload shortly after local change", {
+          cacheRecords: recordsCache.length,
+        });
+        setSyncStatus("syncing", "waiting server update");
+        return;
+      }
       if (isServerWritePending) {
         console.info("[sync][main] Skipping server apply while save is pending");
         setSyncStatus("syncing", "save in progress");
@@ -2315,7 +2330,6 @@ function renderRecords() {
       );
     }
 
-    setSyncStatus("ok", hasActiveFilter ? "rendered (0 visible, filters active)" : "rendered (0 visible)");
     initializeDatePickers();
     return;
   }
@@ -2445,7 +2459,6 @@ function renderRecords() {
 
   initializeDatePickers();
   setDiagnosticsPanel("ok", `Showing ${rows.length} visible record${rows.length === 1 ? "" : "s"} from ${records.length} total.`, latestSyncIssue || filtersSummary);
-  setSyncStatus("ok", `rendered (${rows.length} visible)`);
 }
 
 function showMessage(text, type) {

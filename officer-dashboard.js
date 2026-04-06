@@ -82,6 +82,8 @@ let isLoanFormVisible = true;
 let syncStatusElement = null;
 let recordsCache = [];
 let isServerWritePending = false;
+let lastLocalMutationAt = 0;
+const EMPTY_OVERWRITE_GUARD_MS = 20000;
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -134,6 +136,7 @@ function getRecords() {
 
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
+  lastLocalMutationAt = Date.now();
   syncRecordsToServer(records);
 }
 
@@ -181,6 +184,19 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const shouldGuardEmptyOverwrite = (
+        data.payload.length === 0 &&
+        recordsCache.length > 0 &&
+        Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
+      );
+      if (shouldGuardEmptyOverwrite) {
+        console.info("[sync][officer] Ignoring empty server payload shortly after local change", {
+          officer: currentOfficer,
+          cacheRecords: recordsCache.length,
+        });
+        setSyncStatus("syncing", "waiting server update");
+        return;
+      }
       if (isServerWritePending) {
         console.info("[sync][officer] Skipping server apply while save is pending", {
           officer: currentOfficer,
@@ -480,7 +496,6 @@ function renderRecords() {
 
   if (filtered.length === 0) {
     body.innerHTML = '<tr><td colspan="13" class="empty">No records yet.</td></tr>';
-    setSyncStatus("ok", "rendered (0 visible)");
     updateDashboardStats();
     return;
   }
@@ -532,7 +547,6 @@ function renderRecords() {
     .join("");
   
   updateDashboardStats();
-  setSyncStatus("ok", `rendered (${filtered.length} visible)`);
 }
 
 function getTypeLabel(payableWithin) {
