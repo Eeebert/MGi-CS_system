@@ -130,6 +130,7 @@ let diagnosticsTextElement = null;
 let diagnosticsMetaElement = null;
 let latestSyncIssue = "";
 let recordsCache = [];
+let isServerWritePending = false;
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -298,6 +299,7 @@ function setRecords(records) {
 }
 
 async function syncRecordsToServer(records) {
+  isServerWritePending = true;
   try {
     const res = await fetchStateApi(STORAGE_KEY, {
       method: "PUT",
@@ -312,6 +314,8 @@ async function syncRecordsToServer(records) {
     // Server-only mode: keep in-memory data for current session and show sync error.
     latestSyncIssue = "Cannot save to server right now.";
     setSyncStatus("error", "save failed");
+  } finally {
+    isServerWritePending = false;
   }
 }
 
@@ -341,6 +345,11 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      if (isServerWritePending) {
+        console.info("[sync][main] Skipping server apply while save is pending");
+        setSyncStatus("syncing", "save in progress");
+        return;
+      }
       recordsCache = data.payload;
       console.info("[sync][main] Fetch success", { records: data.payload.length });
       latestSyncIssue = "";

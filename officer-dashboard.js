@@ -81,6 +81,7 @@ let toastTimer;
 let isLoanFormVisible = true;
 let syncStatusElement = null;
 let recordsCache = [];
+let isServerWritePending = false;
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -137,6 +138,7 @@ function setRecords(records) {
 }
 
 async function syncRecordsToServer(records) {
+  isServerWritePending = true;
   try {
     const res = await fetchStateApi(getOfficerStorageKey(), {
       method: "PUT",
@@ -149,6 +151,8 @@ async function syncRecordsToServer(records) {
     }
   } catch {
     setSyncStatus("error", "save failed");
+  } finally {
+    isServerWritePending = false;
   }
 }
 
@@ -177,6 +181,13 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      if (isServerWritePending) {
+        console.info("[sync][officer] Skipping server apply while save is pending", {
+          officer: currentOfficer,
+        });
+        setSyncStatus("syncing", "save in progress");
+        return;
+      }
       recordsCache = data.payload;
       console.info("[sync][officer] Fetch success", { officer: currentOfficer, records: data.payload.length });
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
