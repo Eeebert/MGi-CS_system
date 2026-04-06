@@ -126,6 +126,7 @@ app.put("/api/state/:id", async (req, res) => {
   }
 
   try {
+    const payloadJson = JSON.stringify(payload);
     await pool.query(
       `
         INSERT INTO app_state (id, payload)
@@ -133,7 +134,7 @@ app.put("/api/state/:id", async (req, res) => {
         ON CONFLICT (id)
         DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
       `,
-      [id, payload]
+      [id, payloadJson]
     );
 
     return res.json({ ok: true });
