@@ -100,159 +100,6 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
   throw lastNetworkError || new Error("Failed to reach state API");
 }
 
-// Supabase-backed API for records
-async function getRecords() {
-  setSyncStatus("syncing", "syncing...");
-  try {
-    const res = await fetchStateApi(STORAGE_KEY, {
-      cache: "no-store",
-      headers: {
-        "Cache-Control": "no-cache, no-store, max-age=0",
-        Pragma: "no-cache",
-      },
-    }, true);
-    if (!res.ok) throw new Error("Failed to fetch records");
-    const data = await res.json();
-    if (Array.isArray(data.payload)) {
-      const localRecords = (() => {
-        try {
-          return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-        } catch {
-          return [];
-        }
-      })();
-
-      if (data.payload.length === 0 && localRecords.length > 0) {
-        await setRecords(localRecords);
-        setSyncStatus("ok", `restored local (${localRecords.length} records)`);
-        return localRecords;
-      }
-
-      setSyncStatus("ok", `updated (${data.payload.length} records)`);
-      return data.payload;
-    }
-    setSyncStatus("error", "invalid server payload");
-    return [];
-  } catch (err) {
-    setSyncStatus("error", "offline or fetch error");
-    setDiagnosticsPanel("error", "Cannot load records from Supabase.", err.message);
-    return [];
-  }
-}
-
-async function setRecords(records) {
-  setSyncStatus("syncing", "saving...");
-  try {
-    const res = await fetchStateApi(STORAGE_KEY, {
-      method: "PUT",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: records }),
-    }, false);
-    if (!res.ok) throw new Error("Failed to save records");
-    setSyncStatus("ok", `saved (${records.length} records)`);
-    return true;
-  } catch (err) {
-    setSyncStatus("error", "save failed");
-    setDiagnosticsPanel("error", "Cannot save records to Supabase.", err.message);
-    return false;
-  }
-}
-async function updateReleasedSummaryStats() {
-  if (!releaseSummaryAmount || !releaseSummaryCount) {
-    return;
-  }
-  const records = await getRecords();
-  const totalReleasedAmount = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
-  releaseSummaryAmount.textContent = formatCurrency(totalReleasedAmount);
-  releaseSummaryCount.textContent = `${records.length} released loan${records.length === 1 ? "" : "s"}`;
-}
-
-async function renderRecords() {
-  const records = await getRecords();
-  const rows = getVisibleRecords(records);
-  const activeFilters = getActiveFilterSnapshot();
-  await updateReleasedSummaryStats();
-  console.debug("[render][main] Rendering records", {
-    totalRecords: records.length,
-    visibleRows: rows.length,
-    filters: {
-      name: activeFilters.name,
-      dateGranted: activeFilters.dateGranted,
-      dueDate: activeFilters.dueDate,
-      payable: activeFilters.payable,
-      sortBy: activeFilters.sortBy,
-    },
-    time: new Date().toISOString(),
-  });
-  const filtersSummary = `name=${activeFilters.name || "(none)"}, granted=${activeFilters.dateGranted || "(none)"}, due=${activeFilters.dueDate || "(none)"}, payable=${activeFilters.payable || "(none)"}, sort=${activeFilters.sortBy}`;
-  if (records.length === 0) {
-    setDiagnosticsPanel("warning", "No records found in Supabase yet.", latestSyncIssue || filtersSummary);
-  }
-  if (rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="15" class="empty">No records yet.</td></tr>';
-    const hasActiveFilter = hasActiveFilters(activeFilters);
-    if (records.length > 0 && hasActiveFilter) {
-      setDiagnosticsPanel(
-        "error",
-        "Records exist but current filters hide them.",
-        `Tip: click Reset Filters. Active filters: ${filtersSummary}`
-      );
-    } else if (records.length > 0) {
-      setDiagnosticsPanel(
-        "warning",
-        "Records exist but nothing is currently visible.",
-        latestSyncIssue || filtersSummary
-      );
-    }
-    setSyncStatus("ok", hasActiveFilter ? "rendered (0 visible, filters active)" : "rendered (0 visible)");
-    initializeDatePickers();
-    return;
-  }
-  body.innerHTML = rows
-    .map(
-      ({ record, index, dueDate, effectiveDueDate, isPastDue, daysPastDue }) => {
-        // ...existing code...
-      }
-    )
-    .join("");
-  initializeDatePickers();
-  setDiagnosticsPanel("ok", `Showing ${rows.length} visible record${rows.length === 1 ? "" : "s"} from ${records.length} total.`, latestSyncIssue || filtersSummary);
-  setSyncStatus("ok", `rendered (${rows.length} visible)`);
-}
-
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  const formData = new FormData(form);
-  // ...existing code...
-  let records = await getRecords();
-  records.unshift(nextRecord);
-  await setRecords(records);
-  await renderRecords();
-
-  form.reset();
-  updateCoMakerFieldsVisibility();
-  showMessage("Loan record saved.", "success");
-  showToast("Loan record saved", "success");
-});
-
-clearBtn.addEventListener("click", async () => {
-  const confirmed = window.confirm("Delete all saved records?");
-  if (!confirmed) {
-    return;
-  }
-  await setRecords([]);
-  await renderRecords();
-  showMessage("All records deleted.", "success");
-});
-
-// Initial load
-
-window.addEventListener("DOMContentLoaded", () => {
-  renderRecords();
-});
-
 const STORAGE_KEY = "mgi_loan_records";
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
@@ -282,6 +129,7 @@ let diagnosticsPanelElement = null;
 let diagnosticsTextElement = null;
 let diagnosticsMetaElement = null;
 let latestSyncIssue = "";
+let recordsCache = [];
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -441,15 +289,11 @@ function setDiagnosticsPanel(type, text, metaText) {
 }
 
 function getRecords() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
+  return Array.isArray(recordsCache) ? recordsCache : [];
 }
 
 function setRecords(records) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  recordsCache = Array.isArray(records) ? records : [];
   syncRecordsToServer(records);
 }
 
@@ -465,7 +309,9 @@ async function syncRecordsToServer(records) {
       throw new Error("Failed to sync records");
     }
   } catch {
-    // Server unavailable — data is safe in localStorage
+    // Server-only mode: keep in-memory data for current session and show sync error.
+    latestSyncIssue = "Cannot save to server right now.";
+    setSyncStatus("error", "save failed");
   }
 }
 
@@ -495,16 +341,7 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
-      const localRecords = getRecords();
-      if (data.payload.length === 0 && localRecords.length > 0) {
-        await syncRecordsToServer(localRecords);
-        latestSyncIssue = "";
-        console.info("[sync][main] Server empty, restored from local cache", { records: localRecords.length });
-        setSyncStatus("ok", `restored local (${localRecords.length} records)`);
-        return;
-      }
-
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
+      recordsCache = data.payload;
       console.info("[sync][main] Fetch success", { records: data.payload.length });
       latestSyncIssue = "";
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
@@ -512,8 +349,7 @@ async function loadRecordsFromServer() {
     }
 
     if (data.payload === null) {
-      // If server has no saved state yet, reset local cache to keep devices consistent.
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      recordsCache = [];
       console.info("[sync][main] Server has no payload yet");
       latestSyncIssue = "";
       setSyncStatus("ok", "updated (0 records)");
@@ -537,11 +373,11 @@ async function loadRecordsFromServer() {
     );
     setSyncStatus("error", "invalid server payload");
   } catch {
-    // Network issue — fall back to local data
+    // Network issue in server-only mode.
     console.error("[sync][main] Network error while fetching state");
     latestSyncIssue = "Network error while loading server data.";
     setDiagnosticsPanel("error", "Network problem while syncing.", latestSyncIssue);
-    setSyncStatus("error", "offline, using local data");
+    setSyncStatus("error", "offline (server-only mode)");
   }
 }
 
@@ -2449,7 +2285,7 @@ function renderRecords() {
   const filtersSummary = `name=${activeFilters.name || "(none)"}, granted=${activeFilters.dateGranted || "(none)"}, due=${activeFilters.dueDate || "(none)"}, payable=${activeFilters.payable || "(none)"}, sort=${activeFilters.sortBy}`;
 
   if (records.length === 0) {
-    setDiagnosticsPanel("warning", "No records found in this browser storage yet.", latestSyncIssue || filtersSummary);
+    setDiagnosticsPanel("warning", "No records found in server database yet.", latestSyncIssue || filtersSummary);
   }
 
   if (rows.length === 0) {
@@ -2459,7 +2295,7 @@ function renderRecords() {
     if (records.length > 0 && hasActiveFilter) {
       setDiagnosticsPanel(
         "error",
-        "Records exist but current filters hide them in this browser.",
+        "Records exist but current filters hide them.",
         `Tip: click Reset Filters. Active filters: ${filtersSummary}`
       );
     } else if (records.length > 0) {

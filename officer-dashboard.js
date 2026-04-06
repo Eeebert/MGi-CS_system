@@ -80,6 +80,7 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
 let toastTimer;
 let isLoanFormVisible = true;
 let syncStatusElement = null;
+let recordsCache = [];
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -127,15 +128,11 @@ function getOfficerStorageKey() {
 }
 
 function getRecords() {
-  try {
-    return JSON.parse(localStorage.getItem(getOfficerStorageKey())) || [];
-  } catch {
-    return [];
-  }
+  return Array.isArray(recordsCache) ? recordsCache : [];
 }
 
 function setRecords(records) {
-  localStorage.setItem(getOfficerStorageKey(), JSON.stringify(records));
+  recordsCache = Array.isArray(records) ? records : [];
   syncRecordsToServer(records);
 }
 
@@ -151,7 +148,7 @@ async function syncRecordsToServer(records) {
       throw new Error("Failed to sync records");
     }
   } catch {
-    // Server unavailable — data is safe in localStorage
+    setSyncStatus("error", "save failed");
   }
 }
 
@@ -180,26 +177,14 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
-      const localRecords = getRecords();
-      if (data.payload.length === 0 && localRecords.length > 0) {
-        await syncRecordsToServer(localRecords);
-        console.info("[sync][officer] Server empty, restored from local cache", {
-          officer: currentOfficer,
-          records: localRecords.length,
-        });
-        setSyncStatus("ok", `restored local (${localRecords.length} records)`);
-        return;
-      }
-
-      localStorage.setItem(getOfficerStorageKey(), JSON.stringify(data.payload));
+      recordsCache = data.payload;
       console.info("[sync][officer] Fetch success", { officer: currentOfficer, records: data.payload.length });
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
       return;
     }
 
     if (data.payload === null) {
-      // If server has no saved state yet, reset local cache to keep devices consistent.
-      localStorage.setItem(getOfficerStorageKey(), JSON.stringify([]));
+      recordsCache = [];
       console.info("[sync][officer] Server has no payload yet", { officer: currentOfficer });
       setSyncStatus("ok", "updated (0 records)");
       return;
@@ -208,9 +193,8 @@ async function loadRecordsFromServer() {
     console.warn("[sync][officer] Unexpected payload shape", { payloadType: typeof data.payload });
     setSyncStatus("error", "invalid server payload");
   } catch {
-    // Network issue — fall back to local data
     console.error("[sync][officer] Network error while fetching state", { officer: currentOfficer });
-    setSyncStatus("error", "offline, using local data");
+    setSyncStatus("error", "offline (server-only mode)");
   }
 }
 
@@ -619,7 +603,7 @@ useTodayBtn?.addEventListener("click", () => {
 
 clearBtn?.addEventListener("click", () => {
   if (confirm("Delete all records? This cannot be undone.")) {
-    localStorage.removeItem(getOfficerStorageKey());
+    setRecords([]);
     renderRecords();
     showMessage("All records deleted.", "success");
   }
