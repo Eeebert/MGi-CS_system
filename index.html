@@ -287,7 +287,7 @@
     <div id="write-off-modal" class="dialog-backdrop" aria-hidden="true">
       <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="write-off-title">
         <h3 id="write-off-title">Confirm Write-Off</h3>
-        <p>Enter password to activate write-off and freeze interest growth.</p>
+        <p id="write-off-description">Enter password to activate write-off and freeze interest growth.</p>
         <label class="dialog-field">
           <span>Password</span>
           <input type="password" id="write-off-password" autocomplete="current-password" />
@@ -352,6 +352,22 @@
       </div>
     </div>
 
+    <div id="restore-auth-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card restore-auth-card" role="dialog" aria-modal="true" aria-labelledby="restore-auth-title">
+        <h3 id="restore-auth-title">Secure Restore Access</h3>
+        <p class="restore-auth-text">Enter admin password to restore backup data.</p>
+        <label class="dialog-field">
+          <span>Admin Password</span>
+          <input type="password" id="restore-auth-password" autocomplete="current-password" />
+        </label>
+        <p id="restore-auth-error" class="dialog-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" id="restore-auth-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="restore-auth-confirm" class="btn-pay">Continue Restore</button>
+        </div>
+      </div>
+    </div>
+
     <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
     <aside id="side-drawer" class="side-drawer" aria-hidden="true">
       <div class="side-drawer-header">
@@ -365,6 +381,10 @@
         </div>
       </div>
       <div class="side-drawer-footer">
+        <button id="backup-data" class="btn-secondary" type="button" style="width:100%;">Download Backup Data (.json)</button>
+        <button id="restore-backup" class="btn-secondary" type="button" style="width:100%; margin-top:8px;">Restore Backup (.json)</button>
+        <input id="restore-backup-input" type="file" accept="application/json,.json" style="display:none;" />
+        <p id="backup-status-note" class="side-drawer-note is-loading" role="status" aria-live="polite">Backup status: checking...</p>
         <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
       </div>
     </aside>

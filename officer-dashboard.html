@@ -71,11 +71,20 @@
                   <option value="dateGrantedAsc">Date Granted (Oldest)</option>
                 </select>
               </label>
+              <label class="filter-control">
+                <span>Loan Type</span>
+                <select id="filter-payable">
+                  <option value="">All</option>
+                  <option value="emergency_fixed">Weekly</option>
+                  <option value="monthly_60_fixed">Monthly</option>
+                </select>
+              </label>
               <label class="test-date-control">
                 <span>Test Date</span>
                 <input type="date" id="test-date" />
               </label>
               <button id="use-today" class="btn-secondary" type="button">Use Today</button>
+              <button id="export-word-officer" class="btn-secondary" type="button">Print to Word (.doc)</button>
               <button id="toggle-loan-entry" class="btn-secondary" type="button" aria-expanded="true">Hide Loan Application</button>
               <button id="clear-records" class="btn-danger" type="button">Delete All</button>
             </div>
@@ -165,12 +174,12 @@
               <span>Amount</span>
               <div class="input-with-suffix">
                 <input
-                  type="number"
+                  type="text"
                   id="amount"
                   name="amount"
                   placeholder=""
-                  min="0"
-                  step="0.01"
+                  inputmode="decimal"
+                  autocomplete="off"
                   required
                 />
                 <span class="suffix">₱</span>
@@ -208,6 +217,51 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div id="write-off-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="write-off-title">
+        <h3 id="write-off-title">Confirm Action</h3>
+        <p>Enter password to activate Write-Off or Hatag-Hatag.</p>
+        <label class="dialog-field">
+          <span>Password</span>
+          <input type="password" id="write-off-password" autocomplete="current-password" />
+        </label>
+        <p id="write-off-error" class="dialog-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" id="write-off-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="write-off-confirm" class="btn-danger">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="payment-history-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card payment-history-card" role="dialog" aria-modal="true" aria-labelledby="payment-history-title">
+        <div class="payment-history-head">
+          <div>
+            <h3 id="payment-history-title">Payment History</h3>
+          </div>
+          <button type="button" id="payment-history-close" class="btn-secondary">Close</button>
+        </div>
+        <div id="payment-history-content" class="payment-history-content"></div>
+      </div>
+    </div>
+
+    <div id="payment-entry-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card payment-entry-card" role="dialog" aria-modal="true" aria-labelledby="payment-entry-title">
+        <h3 id="payment-entry-title">Enter Payment</h3>
+        <p id="payment-entry-subtitle">Provide amount to apply.</p>
+        <label class="dialog-field">
+          <span>Amount Paid</span>
+          <input type="text" id="payment-entry-input" inputmode="decimal" autocomplete="off" placeholder="0.00" />
+        </label>
+        <p id="payment-entry-preview" class="payment-entry-preview">Applied: Interest ₱0.00 | Principal ₱0.00</p>
+        <p id="payment-entry-error" class="dialog-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button type="button" id="payment-entry-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="payment-entry-confirm" class="btn-pay">Confirm Pay</button>
+        </div>
+      </div>
+    </div>
 
     <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
     <aside id="side-drawer" class="side-drawer" aria-hidden="true">

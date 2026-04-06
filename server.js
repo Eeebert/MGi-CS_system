@@ -144,6 +144,86 @@ app.put("/api/state/:id", async (req, res) => {
   }
 });
 
+app.get("/api/backup/export", async (_req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: "Database is not configured" });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT id, payload, updated_at FROM app_state ORDER BY id ASC"
+    );
+
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      totalKeys: result.rowCount,
+      rows: result.rows.map((row) => ({
+        id: row.id,
+        payload: row.payload,
+        updatedAt: row.updated_at,
+      })),
+    };
+
+    return res.json(backup);
+  } catch (error) {
+    console.error("GET /api/backup/export error:", error.message);
+    return res.status(500).json({ error: "Database query failed", detail: error.message });
+  }
+});
+
+app.post("/api/backup/import", async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: "Database is not configured" });
+  }
+
+  const rows = req.body?.rows;
+  const replace = req.body?.replace !== false;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ error: "rows array is required" });
+  }
+
+  for (const row of rows) {
+    if (!row || typeof row.id !== "string" || row.id.trim() === "") {
+      return res.status(400).json({ error: "Each row must have a non-empty string id" });
+    }
+    if (typeof row.payload === "undefined") {
+      return res.status(400).json({ error: "Each row must include payload" });
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const ids = rows.map((row) => row.id.trim());
+    if (replace) {
+      await client.query("DELETE FROM app_state WHERE id <> ALL($1::text[])", [ids]);
+    }
+
+    for (const row of rows) {
+      await client.query(
+        `
+          INSERT INTO app_state (id, payload)
+          VALUES ($1, $2::jsonb)
+          ON CONFLICT (id)
+          DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+        `,
+        [row.id.trim(), JSON.stringify(row.payload ?? null)]
+      );
+    }
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, imported: rows.length, replace });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("POST /api/backup/import error:", error.message);
+    return res.status(500).json({ error: "Database import failed", detail: error.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });

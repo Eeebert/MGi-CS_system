@@ -20,8 +20,14 @@ const filterDueDateInput = document.getElementById("filter-due-date");
 const filterPayableSelect = document.getElementById("filter-payable");
 const sortBySelect = document.getElementById("sort-by");
 const exportWordBtn = document.getElementById("export-word");
+const backupDataBtn = document.getElementById("backup-data");
+const restoreBackupBtn = document.getElementById("restore-backup");
+const restoreBackupInput = document.getElementById("restore-backup-input");
+const backupStatusNote = document.getElementById("backup-status-note");
 const toast = document.getElementById("toast");
 const writeOffModal = document.getElementById("write-off-modal");
+const writeOffTitle = document.getElementById("write-off-title");
+const writeOffDescription = document.getElementById("write-off-description");
 const writeOffPasswordInput = document.getElementById("write-off-password");
 const writeOffError = document.getElementById("write-off-error");
 const writeOffConfirmBtn = document.getElementById("write-off-confirm");
@@ -60,6 +66,11 @@ const logoutBtn = document.getElementById("logout-btn");
 const logoutConfirmModal = document.getElementById("logout-confirm-modal");
 const logoutConfirmCancelBtn = document.getElementById("logout-confirm-cancel");
 const logoutConfirmYesBtn = document.getElementById("logout-confirm-yes");
+const restoreAuthModal = document.getElementById("restore-auth-modal");
+const restoreAuthPasswordInput = document.getElementById("restore-auth-password");
+const restoreAuthError = document.getElementById("restore-auth-error");
+const restoreAuthConfirmBtn = document.getElementById("restore-auth-confirm");
+const restoreAuthCancelBtn = document.getElementById("restore-auth-cancel");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
 
 function getStateApiCandidates(stateKey, includeCacheBuster) {
@@ -102,6 +113,132 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
   throw lastNetworkError || new Error("Failed to reach state API");
 }
 
+function getBackupApiCandidates() {
+  const path = "/api/backup/export";
+  const candidates = [path];
+  const currentOrigin = String(window.location.origin || "").replace(/\/+$/, "");
+  const fallbackOrigin = String(API_FALLBACK_ORIGIN || "").replace(/\/+$/, "");
+  if (fallbackOrigin && currentOrigin !== fallbackOrigin) {
+    candidates.push(`${fallbackOrigin}${path}`);
+  }
+  return [...new Set(candidates)];
+}
+
+function getBackupImportApiCandidates() {
+  const path = "/api/backup/import";
+  const candidates = [path];
+  const currentOrigin = String(window.location.origin || "").replace(/\/+$/, "");
+  const fallbackOrigin = String(API_FALLBACK_ORIGIN || "").replace(/\/+$/, "");
+  if (fallbackOrigin && currentOrigin !== fallbackOrigin) {
+    candidates.push(`${fallbackOrigin}${path}`);
+  }
+  return [...new Set(candidates)];
+}
+
+async function fetchBackupApi() {
+  const candidates = getBackupApiCandidates();
+  let lastErrorResponse = null;
+  let lastNetworkError = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = candidates[index];
+    try {
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store, max-age=0",
+          Pragma: "no-cache",
+        },
+      });
+      if (!res.ok && index < candidates.length - 1) {
+        lastErrorResponse = res;
+        continue;
+      }
+      return res;
+    } catch (error) {
+      lastNetworkError = error;
+    }
+  }
+
+  if (lastErrorResponse) {
+    return lastErrorResponse;
+  }
+
+  throw lastNetworkError || new Error("Failed to reach backup API");
+}
+
+async function postBackupImportApi(payload) {
+  const candidates = getBackupImportApiCandidates();
+  let lastErrorResponse = null;
+  let lastNetworkError = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = candidates[index];
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache, no-store, max-age=0",
+          Pragma: "no-cache",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok && index < candidates.length - 1) {
+        lastErrorResponse = res;
+        continue;
+      }
+      return res;
+    } catch (error) {
+      lastNetworkError = error;
+    }
+  }
+
+  if (lastErrorResponse) {
+    return lastErrorResponse;
+  }
+
+  throw lastNetworkError || new Error("Failed to reach backup import API");
+}
+
+function setBackupStatusNote(state, text) {
+  if (!backupStatusNote) {
+    return;
+  }
+
+  backupStatusNote.classList.remove("is-ok", "is-warning", "is-loading");
+  if (state === "ok") {
+    backupStatusNote.classList.add("is-ok");
+  } else if (state === "warning") {
+    backupStatusNote.classList.add("is-warning");
+  } else {
+    backupStatusNote.classList.add("is-loading");
+  }
+  backupStatusNote.textContent = text;
+}
+
+async function refreshBackupHealthStatus() {
+  setBackupStatusNote("loading", "Backup status: checking...");
+  try {
+    const res = await fetchBackupApi();
+    if (res.ok) {
+      setBackupStatusNote("ok", "Backup status: full backup available");
+      return;
+    }
+
+    if (res.status === 503) {
+      setBackupStatusNote("warning", "Backup status: local-only fallback mode");
+      return;
+    }
+
+    setBackupStatusNote("warning", `Backup status: server issue (${res.status})`);
+  } catch {
+    setBackupStatusNote("warning", "Backup status: local-only fallback mode");
+  }
+}
+
 const STORAGE_KEY = "mgi_loan_records";
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
@@ -127,6 +264,7 @@ let toastTimer;
 let isLoanEntryOpen = false;
 let isReleaseSummaryOpen = false;
 let writeOffPasswordResolver = null;
+let restoreAuthPasswordResolver = null;
 let paymentEntryRowIndex = -1;
 let pendingPaymentConfirm = null;
 let syncStatusElement = null;
@@ -167,6 +305,54 @@ function getAuthSettings() {
 
 function getWriteOffPassword() {
   return String(getAuthSettings().mainPassword || DEFAULT_AUTH_SETTINGS.mainPassword);
+}
+
+function closeRestoreAuthModal(result) {
+  if (!restoreAuthModal) {
+    if (typeof restoreAuthPasswordResolver === "function") {
+      restoreAuthPasswordResolver(result);
+      restoreAuthPasswordResolver = null;
+    }
+    return;
+  }
+
+  restoreAuthModal.classList.remove("show");
+  restoreAuthModal.setAttribute("aria-hidden", "true");
+
+  if (restoreAuthPasswordInput) {
+    restoreAuthPasswordInput.value = "";
+  }
+  if (restoreAuthError) {
+    restoreAuthError.textContent = "";
+  }
+
+  if (typeof restoreAuthPasswordResolver === "function") {
+    restoreAuthPasswordResolver(result);
+    restoreAuthPasswordResolver = null;
+  }
+}
+
+function requestRestoreAdminPassword() {
+  if (!restoreAuthModal || !restoreAuthPasswordInput) {
+    const fallback = window.prompt("Enter admin password to restore backup:", "");
+    return Promise.resolve(fallback);
+  }
+
+  if (restoreAuthError) {
+    restoreAuthError.textContent = "";
+  }
+
+  restoreAuthModal.classList.add("show");
+  restoreAuthModal.setAttribute("aria-hidden", "false");
+  restoreAuthPasswordInput.value = "";
+
+  setTimeout(() => {
+    restoreAuthPasswordInput.focus();
+  }, 0);
+
+  return new Promise((resolve) => {
+    restoreAuthPasswordResolver = resolve;
+  });
 }
 
 function ensureSyncStatusElement() {
@@ -514,6 +700,27 @@ function toFileSafeName(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "") || "record";
+}
+
+function formatBackupTimestamp(dateValue) {
+  const date = dateValue instanceof Date ? dateValue : new Date();
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}-${m}-${d}_${h}${min}${s}`;
+}
+
+function downloadJsonFile(fileName, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function toIsoDate(dateValue) {
@@ -1724,6 +1931,133 @@ async function exportVisibleRecords() {
   showToast("Exported Word file", "success");
 }
 
+async function downloadFullBackup() {
+  try {
+    const res = await fetchBackupApi();
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const body = await res.json();
+        detail = body?.detail || body?.error || "";
+      } catch {
+        try {
+          detail = (await res.text()).slice(0, 200);
+        } catch {}
+      }
+      throw new Error(`Backup export failed (${res.status})${detail ? `: ${detail}` : ""}`);
+    }
+
+    const payload = await res.json();
+    const exportedAt = payload?.exportedAt || new Date().toISOString();
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    const backupFile = {
+      meta: {
+        source: "mgi-cs-system",
+        mode: "server-full",
+        exportedAt,
+        totalKeys: rows.length,
+      },
+      rows,
+    };
+
+    downloadJsonFile(`mgi_backup_${formatBackupTimestamp(new Date())}.json`, backupFile);
+    showToast("Backup downloaded", "success");
+    setBackupStatusNote("ok", "Backup status: full backup available");
+  } catch (error) {
+    console.error("[backup] export failed", error);
+
+    // Fallback backup from currently loaded records so user still gets a downloadable copy.
+    const localRows = getRecords();
+    if (Array.isArray(localRows) && localRows.length > 0) {
+      const fallbackBackup = {
+        meta: {
+          source: "mgi-cs-system",
+          mode: "client-fallback",
+          exportedAt: new Date().toISOString(),
+          warning: "Server backup unavailable. This file contains only currently loaded main dashboard records.",
+          totalKeys: 1,
+        },
+        rows: [
+          {
+            id: STORAGE_KEY,
+            payload: localRows,
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      };
+
+      downloadJsonFile(`mgi_backup_local_${formatBackupTimestamp(new Date())}.json`, fallbackBackup);
+      showMessage("Server backup unavailable. Downloaded local backup instead.", "error");
+      showToast("Local backup downloaded", "success");
+      setBackupStatusNote("warning", "Backup status: local-only fallback mode");
+      return;
+    }
+
+    showMessage("Backup failed. Server backup is unavailable and no local records are loaded.", "error");
+    showToast("Backup failed", "error");
+    setBackupStatusNote("warning", "Backup status: backup unavailable");
+  }
+}
+
+async function restoreBackupFromFile(file) {
+  if (!file) {
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+    if (rows.length === 0) {
+      showMessage("Invalid backup file: rows are missing.", "error");
+      showToast("Restore failed", "error");
+      return;
+    }
+
+    const hasInvalidRow = rows.some((row) => !row || typeof row.id !== "string" || !Object.prototype.hasOwnProperty.call(row, "payload"));
+    if (hasInvalidRow) {
+      showMessage("Invalid backup file format.", "error");
+      showToast("Restore failed", "error");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Restore backup with ${rows.length} key(s)?\n\nThis will replace current server data with the backup snapshot.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const res = await postBackupImportApi({ rows, replace: true });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const body = await res.json();
+        detail = body?.detail || body?.error || "";
+      } catch {
+        try {
+          detail = (await res.text()).slice(0, 200);
+        } catch {}
+      }
+      throw new Error(`Restore failed (${res.status})${detail ? `: ${detail}` : ""}`);
+    }
+
+    await loadRecordsFromServer();
+    renderRecords();
+    await refreshBackupHealthStatus();
+    showMessage("Backup restored successfully.", "success");
+    showToast("Restore complete", "success");
+  } catch (error) {
+    console.error("[backup] restore failed", error);
+    showMessage("Backup restore failed. Check backup file and server status.", "error");
+    showToast("Restore failed", "error");
+  } finally {
+    if (restoreBackupInput) {
+      restoreBackupInput.value = "";
+    }
+  }
+}
+
 async function exportStatementOfAccount(record) {
   const logoDataUrl = await getImageDataUrl("images/mgi_logo.png");
   const dueDate = record.dueDate || computeDueDate(record.dateGranted, record.payableWithin);
@@ -2136,10 +2470,24 @@ function closeWriteOffModal(result) {
   }
 }
 
-function requestWriteOffPassword() {
+function requestWriteOffPassword(actionLabel = "Write-Off") {
   if (!writeOffModal || !writeOffPasswordInput) {
-    const fallback = window.prompt("Enter password to confirm Write-Off:");
+    const fallback = window.prompt(`Enter password to confirm ${actionLabel}:`);
     return Promise.resolve(fallback);
+  }
+
+  const mode = String(actionLabel || "Write-Off");
+  const isHatag = mode.toLowerCase().includes("hatag");
+  if (writeOffTitle) {
+    writeOffTitle.textContent = `Confirm ${mode}`;
+  }
+  if (writeOffConfirmBtn) {
+    writeOffConfirmBtn.textContent = `Confirm ${mode}`;
+  }
+  if (writeOffDescription) {
+    writeOffDescription.textContent = isHatag
+      ? "Enter password to activate Hatag-Hatag and freeze interest growth."
+      : "Enter password to activate write-off and freeze interest growth.";
   }
 
   if (writeOffError) {
@@ -3035,7 +3383,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    const password = await requestWriteOffPassword();
+    const password = await requestWriteOffPassword("Write-Off");
     if (password === null) {
       return;
     }
@@ -3079,7 +3427,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    const password = await requestWriteOffPassword();
+    const password = await requestWriteOffPassword("Hatag-Hatag");
     if (password === null) {
       return;
     }
@@ -3345,6 +3693,55 @@ filterDueDateInput.addEventListener("input", renderRecords);
 filterPayableSelect.addEventListener("change", renderRecords);
 sortBySelect.addEventListener("change", renderRecords);
 exportWordBtn.addEventListener("click", exportVisibleRecords);
+backupDataBtn?.addEventListener("click", () => {
+  closeDrawer();
+  downloadFullBackup();
+});
+
+restoreBackupBtn?.addEventListener("click", async () => {
+  const adminPassword = String(getAuthSettings().adminPassword || DEFAULT_AUTH_SETTINGS.adminPassword || "").trim();
+  const enteredPassword = await requestRestoreAdminPassword();
+
+  if (enteredPassword === null) {
+    return;
+  }
+
+  if (String(enteredPassword).trim() !== adminPassword) {
+    showMessage("Invalid admin password. Restore cancelled.", "error");
+    showToast("Restore blocked", "error");
+    return;
+  }
+
+  restoreBackupInput?.click();
+});
+
+restoreAuthConfirmBtn?.addEventListener("click", () => {
+  const password = (restoreAuthPasswordInput?.value || "").trim();
+  if (!password) {
+    if (restoreAuthError) {
+      restoreAuthError.textContent = "Password is required.";
+    }
+    restoreAuthPasswordInput?.focus();
+    return;
+  }
+  closeRestoreAuthModal(password);
+});
+
+restoreAuthCancelBtn?.addEventListener("click", () => {
+  closeRestoreAuthModal(null);
+});
+
+restoreAuthModal?.addEventListener("click", (event) => {
+  if (event.target === restoreAuthModal) {
+    closeRestoreAuthModal(null);
+  }
+});
+
+restoreBackupInput?.addEventListener("change", () => {
+  const file = restoreBackupInput.files && restoreBackupInput.files[0];
+  closeDrawer();
+  restoreBackupFromFile(file || null);
+});
 
 writeOffConfirmBtn?.addEventListener("click", () => {
   const password = (writeOffPasswordInput?.value || "").trim();
@@ -3394,6 +3791,18 @@ window.addEventListener("keydown", (event) => {
   if (paymentHistoryModal?.classList.contains("show") && event.key === "Escape") {
     closePaymentHistoryModal();
     return;
+  }
+
+  if (restoreAuthModal?.classList.contains("show")) {
+    if (event.key === "Escape") {
+      closeRestoreAuthModal(null);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      restoreAuthConfirmBtn?.click();
+      return;
+    }
   }
 
   if (!writeOffModal || !writeOffModal.classList.contains("show")) {
@@ -3507,6 +3916,7 @@ function openDrawer() {
   drawerOverlay?.classList.add("is-open");
   sideDrawer?.setAttribute("aria-hidden", "false");
   mainHamburgerBtn?.classList.add("is-open");
+  refreshBackupHealthStatus();
 }
 
 function closeDrawer() {
@@ -3569,6 +3979,7 @@ logoutConfirmModal?.addEventListener("click", (event) => {
 });
 
 initializeTheme();
+refreshBackupHealthStatus();
 
 togglePasswordBtn?.addEventListener("click", () => {
   if (!loginPasswordInput) {
