@@ -109,7 +109,7 @@ app.get("/api/state/:id", async (req, res) => {
     return res.json({ payload });
   } catch (error) {
     console.error("GET /api/state error:", error.message);
-    return res.status(500).json({ error: "Database query failed" });
+    return res.status(500).json({ error: "Database query failed", detail: error.message });
   }
 });
 
@@ -139,7 +139,7 @@ app.put("/api/state/:id", async (req, res) => {
     return res.json({ ok: true });
   } catch (error) {
     console.error("PUT /api/state error:", error.message);
-    return res.status(500).json({ error: "Database query failed" });
+    return res.status(500).json({ error: "Database query failed", detail: error.message });
   }
 });
 

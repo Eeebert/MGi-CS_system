@@ -134,6 +134,7 @@ let recordsCache = [];
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
+let hasUnsyncedLocalChanges = false;
 let syncDebugState = {
   save: "idle",
   fetch: "idle",
@@ -323,6 +324,7 @@ function getRecords() {
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
   lastLocalMutationAt = Date.now();
+  hasUnsyncedLocalChanges = true;
   setSyncDebug({ save: `queued(${recordsCache.length})` });
   syncRecordsToServer(records);
 }
@@ -338,12 +340,18 @@ async function syncRecordsToServer(records) {
       body: JSON.stringify({ payload: records }),
     }, false);
     if (!res.ok) {
-      throw new Error("Failed to sync records");
+      let errorDetail = "";
+      try {
+        const errBody = await res.json();
+        errorDetail = errBody?.detail || errBody?.error || "";
+      } catch {}
+      throw new Error(`Failed to sync records (${res.status})${errorDetail ? `: ${errorDetail}` : ""}`);
     }
+    hasUnsyncedLocalChanges = false;
     setSyncDebug({ save: `ok(${records.length})` });
-  } catch {
+  } catch (error) {
     // Server-only mode: keep in-memory data for current session and show sync error.
-    latestSyncIssue = "Cannot save to server right now.";
+    latestSyncIssue = error?.message || "Cannot save to server right now.";
     setSyncStatus("error", "save failed");
     setSyncDebug({ save: "failed" });
   } finally {
@@ -379,6 +387,19 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const shouldProtectUnsyncedData = (
+        hasUnsyncedLocalChanges &&
+        data.payload.length === 0 &&
+        recordsCache.length > 0
+      );
+      if (shouldProtectUnsyncedData) {
+        console.info("[sync][main] Keeping unsynced local records while server save is failing", {
+          cacheRecords: recordsCache.length,
+        });
+        setSyncStatus("error", "save pending retry");
+        setSyncDebug({ fetch: `count(${data.payload.length})`, guard: "unsynced-local" });
+        return;
+      }
       const shouldGuardEmptyOverwrite = (
         data.payload.length === 0 &&
         recordsCache.length > 0 &&

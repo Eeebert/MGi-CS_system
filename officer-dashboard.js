@@ -84,6 +84,7 @@ let recordsCache = [];
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
+let hasUnsyncedLocalChanges = false;
 
 function ensureSyncStatusElement() {
   if (syncStatusElement && document.body.contains(syncStatusElement)) {
@@ -137,6 +138,7 @@ function getRecords() {
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
   lastLocalMutationAt = Date.now();
+  hasUnsyncedLocalChanges = true;
   syncRecordsToServer(records);
 }
 
@@ -150,9 +152,19 @@ async function syncRecordsToServer(records) {
       body: JSON.stringify({ payload: records }),
     }, false);
     if (!res.ok) {
-      throw new Error("Failed to sync records");
+      let errorDetail = "";
+      try {
+        const errBody = await res.json();
+        errorDetail = errBody?.detail || errBody?.error || "";
+      } catch {}
+      throw new Error(`Failed to sync records (${res.status})${errorDetail ? `: ${errorDetail}` : ""}`);
     }
-  } catch {
+    hasUnsyncedLocalChanges = false;
+  } catch (error) {
+    console.error("[sync][officer] Save failed", {
+      officer: currentOfficer,
+      message: error?.message || "unknown",
+    });
     setSyncStatus("error", "save failed");
   } finally {
     isServerWritePending = false;
@@ -184,6 +196,19 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const shouldProtectUnsyncedData = (
+        hasUnsyncedLocalChanges &&
+        data.payload.length === 0 &&
+        recordsCache.length > 0
+      );
+      if (shouldProtectUnsyncedData) {
+        console.info("[sync][officer] Keeping unsynced local records while server save is failing", {
+          officer: currentOfficer,
+          cacheRecords: recordsCache.length,
+        });
+        setSyncStatus("error", "save pending retry");
+        return;
+      }
       const shouldGuardEmptyOverwrite = (
         data.payload.length === 0 &&
         recordsCache.length > 0 &&
