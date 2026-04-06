@@ -126,11 +126,11 @@ app.put("/api/state/:id", async (req, res) => {
   }
 
   try {
-    const payloadJson = JSON.stringify(payload);
+    const payloadJson = JSON.stringify(payload ?? null);
     await pool.query(
       `
         INSERT INTO app_state (id, payload)
-        VALUES ($1, $2)
+        VALUES ($1, $2::jsonb)
         ON CONFLICT (id)
         DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
       `,
