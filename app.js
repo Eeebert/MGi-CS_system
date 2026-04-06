@@ -60,18 +60,57 @@ const logoutBtn = document.getElementById("logout-btn");
 const logoutConfirmModal = document.getElementById("logout-confirm-modal");
 const logoutConfirmCancelBtn = document.getElementById("logout-confirm-cancel");
 const logoutConfirmYesBtn = document.getElementById("logout-confirm-yes");
+const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+
+function getStateApiCandidates(stateKey, includeCacheBuster) {
+  const query = includeCacheBuster ? "?t=" + Date.now() : "";
+  const path = "/api/state/" + encodeURIComponent(stateKey) + query;
+  const candidates = [path];
+
+  const isRenderOrigin = /(^|\.)onrender\.com$/i.test(window.location.hostname || "");
+  if (!isRenderOrigin) {
+    candidates.push(API_FALLBACK_ORIGIN + path);
+  }
+
+  return [...new Set(candidates)];
+}
+
+async function fetchStateApi(stateKey, options, includeCacheBuster) {
+  const candidates = getStateApiCandidates(stateKey, includeCacheBuster);
+  let last404 = null;
+  let lastNetworkError = null;
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, options);
+      if (res.status === 404 && candidates.length > 1) {
+        last404 = res;
+        continue;
+      }
+      return res;
+    } catch (error) {
+      lastNetworkError = error;
+    }
+  }
+
+  if (last404) {
+    return last404;
+  }
+
+  throw lastNetworkError || new Error("Failed to reach state API");
+}
 
 // Supabase-backed API for records
 async function getRecords() {
   setSyncStatus("syncing", "syncing...");
   try {
-    const res = await fetch(`/api/state/${STORAGE_KEY}?t=${Date.now()}`, {
+    const res = await fetchStateApi(STORAGE_KEY, {
       cache: "no-store",
       headers: {
         "Cache-Control": "no-cache, no-store, max-age=0",
         Pragma: "no-cache",
       },
-    });
+    }, true);
     if (!res.ok) throw new Error("Failed to fetch records");
     const data = await res.json();
     if (Array.isArray(data.payload)) {
@@ -90,12 +129,12 @@ async function getRecords() {
 async function setRecords(records) {
   setSyncStatus("syncing", "saving...");
   try {
-    const res = await fetch(`/api/state/${STORAGE_KEY}`, {
+    const res = await fetchStateApi(STORAGE_KEY, {
       method: "PUT",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payload: records }),
-    });
+    }, false);
     if (!res.ok) throw new Error("Failed to save records");
     setSyncStatus("ok", `saved (${records.length} records)`);
     return true;
@@ -402,12 +441,12 @@ function setRecords(records) {
 
 async function syncRecordsToServer(records) {
   try {
-    const res = await fetch("/api/state/" + STORAGE_KEY, {
+    const res = await fetchStateApi(STORAGE_KEY, {
       method: "PUT",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payload: records }),
-    });
+    }, false);
     if (!res.ok) {
       throw new Error("Failed to sync records");
     }
@@ -425,14 +464,13 @@ async function loadRecordsFromServer() {
   });
 
   try {
-    const stateUrl = "/api/state/" + STORAGE_KEY + "?t=" + Date.now();
-    const res = await fetch(stateUrl, {
+    const res = await fetchStateApi(STORAGE_KEY, {
       cache: "no-store",
       headers: {
         "Cache-Control": "no-cache, no-store, max-age=0",
         Pragma: "no-cache",
       },
-    });
+    }, true);
     if (!res.ok) {
       console.error("[sync][main] Fetch failed", { status: res.status, statusText: res.statusText });
       latestSyncIssue = `Server error ${res.status}: ${res.statusText || "Request failed"}`;
