@@ -114,6 +114,20 @@ async function getRecords() {
     if (!res.ok) throw new Error("Failed to fetch records");
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const localRecords = (() => {
+        try {
+          return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        } catch {
+          return [];
+        }
+      })();
+
+      if (data.payload.length === 0 && localRecords.length > 0) {
+        await setRecords(localRecords);
+        setSyncStatus("ok", `restored local (${localRecords.length} records)`);
+        return localRecords;
+      }
+
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
       return data.payload;
     }
@@ -481,6 +495,15 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const localRecords = getRecords();
+      if (data.payload.length === 0 && localRecords.length > 0) {
+        await syncRecordsToServer(localRecords);
+        latestSyncIssue = "";
+        console.info("[sync][main] Server empty, restored from local cache", { records: localRecords.length });
+        setSyncStatus("ok", `restored local (${localRecords.length} records)`);
+        return;
+      }
+
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data.payload));
       console.info("[sync][main] Fetch success", { records: data.payload.length });
       latestSyncIssue = "";

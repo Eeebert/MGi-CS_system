@@ -180,6 +180,17 @@ async function loadRecordsFromServer() {
 
     const data = await res.json();
     if (Array.isArray(data.payload)) {
+      const localRecords = getRecords();
+      if (data.payload.length === 0 && localRecords.length > 0) {
+        await syncRecordsToServer(localRecords);
+        console.info("[sync][officer] Server empty, restored from local cache", {
+          officer: currentOfficer,
+          records: localRecords.length,
+        });
+        setSyncStatus("ok", `restored local (${localRecords.length} records)`);
+        return;
+      }
+
       localStorage.setItem(getOfficerStorageKey(), JSON.stringify(data.payload));
       console.info("[sync][officer] Fetch success", { officer: currentOfficer, records: data.payload.length });
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
