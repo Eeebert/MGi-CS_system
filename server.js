@@ -1,12 +1,14 @@
 const path = require("path");
 const express = require("express");
 const { Pool } = require("pg");
+const cors = require("cors");
 
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+app.use(cors()); // Enable CORS for all routes
 app.use(express.json({ limit: "1mb" }));
 
 // Prevent browsers from caching HTML, JS, and CSS so updates deploy immediately
