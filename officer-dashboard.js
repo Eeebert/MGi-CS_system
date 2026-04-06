@@ -44,8 +44,9 @@ function getStateApiCandidates(stateKey, includeCacheBuster) {
   const path = "/api/state/" + encodeURIComponent(stateKey) + query;
   const candidates = [path];
 
-  const isRenderOrigin = /(^|\.)onrender\.com$/i.test(window.location.hostname || "");
-  if (!isRenderOrigin) {
+  const currentOrigin = String(window.location.origin || "").replace(/\/+$/, "");
+  const fallbackOrigin = String(API_FALLBACK_ORIGIN || "").replace(/\/+$/, "");
+  if (fallbackOrigin && currentOrigin !== fallbackOrigin) {
     candidates.push(API_FALLBACK_ORIGIN + path);
   }
 
@@ -54,14 +55,15 @@ function getStateApiCandidates(stateKey, includeCacheBuster) {
 
 async function fetchStateApi(stateKey, options, includeCacheBuster) {
   const candidates = getStateApiCandidates(stateKey, includeCacheBuster);
-  let last404 = null;
+  let lastErrorResponse = null;
   let lastNetworkError = null;
 
-  for (const url of candidates) {
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = candidates[index];
     try {
       const res = await fetch(url, options);
-      if (res.status === 404 && candidates.length > 1) {
-        last404 = res;
+      if (!res.ok && index < candidates.length - 1) {
+        lastErrorResponse = res;
         continue;
       }
       return res;
@@ -70,8 +72,8 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
     }
   }
 
-  if (last404) {
-    return last404;
+  if (lastErrorResponse) {
+    return lastErrorResponse;
   }
 
   throw lastNetworkError || new Error("Failed to reach state API");
@@ -85,25 +87,10 @@ let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
 let hasUnsyncedLocalChanges = false;
+let pendingRetryTimer = null;
 
 function ensureSyncStatusElement() {
-  if (syncStatusElement && document.body.contains(syncStatusElement)) {
-    return syncStatusElement;
-  }
-
-  const topbarActions = document.querySelector(".topbar-actions");
-  if (!topbarActions) {
-    return null;
-  }
-
-  const badge = document.createElement("span");
-  badge.className = "sync-status-badge is-idle";
-  badge.setAttribute("role", "status");
-  badge.setAttribute("aria-live", "polite");
-  badge.textContent = "Sync: idle";
-  topbarActions.prepend(badge);
-  syncStatusElement = badge;
-  return badge;
+  return null;
 }
 
 function setSyncStatus(state, detail) {
@@ -142,8 +129,22 @@ function setRecords(records) {
   syncRecordsToServer(records);
 }
 
+function schedulePendingSaveRetry() {
+  if (pendingRetryTimer || isServerWritePending || !hasUnsyncedLocalChanges) {
+    return;
+  }
+
+  pendingRetryTimer = setTimeout(() => {
+    pendingRetryTimer = null;
+    if (!isServerWritePending && hasUnsyncedLocalChanges) {
+      syncRecordsToServer(getRecords());
+    }
+  }, 3000);
+}
+
 async function syncRecordsToServer(records) {
   isServerWritePending = true;
+  setSyncStatus("syncing", "saving...");
   try {
     const res = await fetchStateApi(getOfficerStorageKey(), {
       method: "PUT",
@@ -160,18 +161,27 @@ async function syncRecordsToServer(records) {
       throw new Error(`Failed to sync records (${res.status})${errorDetail ? `: ${errorDetail}` : ""}`);
     }
     hasUnsyncedLocalChanges = false;
+    if (pendingRetryTimer) {
+      clearTimeout(pendingRetryTimer);
+      pendingRetryTimer = null;
+    }
+    setSyncStatus("ok", `saved (${records.length} records)`);
   } catch (error) {
     console.error("[sync][officer] Save failed", {
       officer: currentOfficer,
       message: error?.message || "unknown",
     });
-    setSyncStatus("error", "save failed");
+    setSyncStatus("error", "save pending retry");
+    schedulePendingSaveRetry();
   } finally {
     isServerWritePending = false;
   }
 }
 
 async function loadRecordsFromServer() {
+  if (!isServerWritePending && hasUnsyncedLocalChanges) {
+    syncRecordsToServer(getRecords());
+  }
   setSyncStatus("syncing", "syncing...");
   console.info("[sync][officer] Fetch start", {
     officer: currentOfficer,
@@ -207,6 +217,7 @@ async function loadRecordsFromServer() {
           cacheRecords: recordsCache.length,
         });
         setSyncStatus("error", "save pending retry");
+        schedulePendingSaveRetry();
         return;
       }
       const shouldGuardEmptyOverwrite = (
@@ -816,7 +827,7 @@ function applyTheme(theme) {
 }
 
 function initializeTheme() {
-  const savedTheme = localStorage.getItem(THEME_KEY) || "white";
+  const savedTheme = localStorage.getItem(THEME_KEY) || "black";
   applyTheme(savedTheme);
 }
 
@@ -887,4 +898,11 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
   setInterval(() => {
     loadRecordsFromServer().then(() => renderRecords());
   }, 5000);
+
+  window.addEventListener("online", () => {
+    if (!isServerWritePending && hasUnsyncedLocalChanges) {
+      syncRecordsToServer(getRecords());
+    }
+    loadRecordsFromServer().then(() => renderRecords());
+  });
 }

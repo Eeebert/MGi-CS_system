@@ -67,8 +67,9 @@ function getStateApiCandidates(stateKey, includeCacheBuster) {
   const path = "/api/state/" + encodeURIComponent(stateKey) + query;
   const candidates = [path];
 
-  const isRenderOrigin = /(^|\.)onrender\.com$/i.test(window.location.hostname || "");
-  if (!isRenderOrigin) {
+  const currentOrigin = String(window.location.origin || "").replace(/\/+$/, "");
+  const fallbackOrigin = String(API_FALLBACK_ORIGIN || "").replace(/\/+$/, "");
+  if (fallbackOrigin && currentOrigin !== fallbackOrigin) {
     candidates.push(API_FALLBACK_ORIGIN + path);
   }
 
@@ -77,14 +78,15 @@ function getStateApiCandidates(stateKey, includeCacheBuster) {
 
 async function fetchStateApi(stateKey, options, includeCacheBuster) {
   const candidates = getStateApiCandidates(stateKey, includeCacheBuster);
-  let last404 = null;
+  let lastErrorResponse = null;
   let lastNetworkError = null;
 
-  for (const url of candidates) {
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = candidates[index];
     try {
       const res = await fetch(url, options);
-      if (res.status === 404 && candidates.length > 1) {
-        last404 = res;
+      if (!res.ok && index < candidates.length - 1) {
+        lastErrorResponse = res;
         continue;
       }
       return res;
@@ -93,8 +95,8 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
     }
   }
 
-  if (last404) {
-    return last404;
+  if (lastErrorResponse) {
+    return lastErrorResponse;
   }
 
   throw lastNetworkError || new Error("Failed to reach state API");
@@ -104,11 +106,14 @@ const STORAGE_KEY = "mgi_loan_records";
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
-const AUTH_USERNAME = "username";
-const AUTH_PASSWORD = "123";
-const PORTFOLIO_USERNAME = "portfolio";
-const PORTFOLIO_PASSWORD = "123";
-const WRITE_OFF_PASSWORD = AUTH_PASSWORD;
+const AUTH_SETTINGS_KEY = "mgi_auth_settings";
+const DEFAULT_AUTH_SETTINGS = {
+  mainUsername: "username",
+  mainPassword: "123",
+  portfolioUsername: "portfolio",
+  portfolioPassword: "123",
+  adminPassword: "admin123",
+};
 const AUTO_REFRESH_MS = 5 * 1000;
 const EXPORT_ADDRESS_TEXT = "TALISAY, SANTANDER, CEBU";
 const LOAN_TYPE_MONTHLY_OPEN = "monthly_open";
@@ -141,24 +146,31 @@ let syncDebugState = {
   guard: "no",
 };
 
+function getAuthSettings() {
+  try {
+    const raw = localStorage.getItem(AUTH_SETTINGS_KEY);
+    if (!raw) {
+      return { ...DEFAULT_AUTH_SETTINGS };
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return { ...DEFAULT_AUTH_SETTINGS };
+    }
+    return {
+      ...DEFAULT_AUTH_SETTINGS,
+      ...parsed,
+    };
+  } catch {
+    return { ...DEFAULT_AUTH_SETTINGS };
+  }
+}
+
+function getWriteOffPassword() {
+  return String(getAuthSettings().mainPassword || DEFAULT_AUTH_SETTINGS.mainPassword);
+}
+
 function ensureSyncStatusElement() {
-  if (syncStatusElement && document.body.contains(syncStatusElement)) {
-    return syncStatusElement;
-  }
-
-  const topbarActions = document.querySelector(".topbar-actions");
-  if (!topbarActions) {
-    return null;
-  }
-
-  const badge = document.createElement("span");
-  badge.className = "sync-status-badge is-idle";
-  badge.setAttribute("role", "status");
-  badge.setAttribute("aria-live", "polite");
-  badge.textContent = "Sync: idle";
-  topbarActions.prepend(badge);
-  syncStatusElement = badge;
-  return badge;
+  return null;
 }
 
 function setSyncStatus(state, detail) {
@@ -224,64 +236,7 @@ function clearAllRecordFilters() {
 }
 
 function ensureDiagnosticsPanelElement() {
-  if (
-    diagnosticsPanelElement &&
-    diagnosticsTextElement &&
-    diagnosticsMetaElement &&
-    diagnosticsDebugElement &&
-    document.body.contains(diagnosticsPanelElement)
-  ) {
-    return diagnosticsPanelElement;
-  }
-
-  const recordsPanel = document.querySelector(".records-panel");
-  if (!recordsPanel) {
-    return null;
-  }
-
-  const panel = document.createElement("div");
-  panel.className = "sync-diagnostics-panel is-info";
-
-  const title = document.createElement("strong");
-  title.className = "sync-diagnostics-title";
-  title.textContent = "Diagnostics";
-
-  const text = document.createElement("p");
-  text.className = "sync-diagnostics-text";
-  text.textContent = "Waiting for sync information...";
-
-  const meta = document.createElement("p");
-  meta.className = "sync-diagnostics-meta";
-  meta.textContent = "";
-
-  const debug = document.createElement("p");
-  debug.className = "sync-diagnostics-meta";
-  debug.textContent = "Debug: save=idle | fetch=idle | guard=no";
-
-  const resetBtn = document.createElement("button");
-  resetBtn.type = "button";
-  resetBtn.className = "btn-secondary sync-diagnostics-reset";
-  resetBtn.textContent = "Reset Filters";
-  resetBtn.addEventListener("click", clearAllRecordFilters);
-
-  panel.appendChild(title);
-  panel.appendChild(text);
-  panel.appendChild(meta);
-  panel.appendChild(debug);
-  panel.appendChild(resetBtn);
-
-  const tableHead = recordsPanel.querySelector(".table-head");
-  if (tableHead?.nextSibling) {
-    recordsPanel.insertBefore(panel, tableHead.nextSibling);
-  } else {
-    recordsPanel.appendChild(panel);
-  }
-
-  diagnosticsPanelElement = panel;
-  diagnosticsTextElement = text;
-  diagnosticsMetaElement = meta;
-  diagnosticsDebugElement = debug;
-  return panel;
+  return null;
 }
 
 function setDiagnosticsPanel(type, text, metaText) {
@@ -2590,6 +2545,7 @@ function hideLoadingScreen() {
     return;
   }
   loadingScreen.classList.add("hidden");
+  document.body.classList.remove("login-locked");
 }
 
 function setLoginMessage(text, isSuccess) {
@@ -2601,10 +2557,11 @@ function setLoginMessage(text, isSuccess) {
 }
 
 function authenticateUser(username, password) {
-  if (username === AUTH_USERNAME && password === AUTH_PASSWORD) {
+  const auth = getAuthSettings();
+  if (username === auth.mainUsername && password === auth.mainPassword) {
     return "main";
   }
-  if (username === PORTFOLIO_USERNAME && password === PORTFOLIO_PASSWORD) {
+  if (username === auth.portfolioUsername && password === auth.portfolioPassword) {
     return "portfolio";
   }
   return null;
@@ -3083,7 +3040,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    if (password.trim() !== WRITE_OFF_PASSWORD) {
+    if (password.trim() !== getWriteOffPassword()) {
       showMessage("Invalid password. Write-Off cancelled.", "error");
       showToast("Invalid write-off password", "error");
       return;
@@ -3127,7 +3084,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    if (password.trim() !== WRITE_OFF_PASSWORD) {
+    if (password.trim() !== getWriteOffPassword()) {
       showMessage("Invalid password. Hatag-Hatag cancelled.", "error");
       showToast("Invalid Hatag-Hatag password", "error");
       return;
@@ -3541,7 +3498,7 @@ function applyTheme(theme) {
 }
 
 function initializeTheme() {
-  const savedTheme = localStorage.getItem(THEME_KEY) || "white";
+  const savedTheme = localStorage.getItem(THEME_KEY) || "black";
   applyTheme(savedTheme);
 }
 
@@ -3688,6 +3645,8 @@ window.addEventListener("load", () => {
     hideLoadingScreen();
     return;
   }
+
+  document.body.classList.add("login-locked");
 
   if (loginUsernameInput) {
     loginUsernameInput.focus();

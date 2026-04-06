@@ -42,6 +42,47 @@ const typeSettledBalance = document.getElementById("type-settled-balance");
 const portfolioLogoutBtn = document.getElementById("portfolio-logout");
 const dailyPrincipalCollected = document.getElementById("daily-principal-collected");
 const dailyInterestCollected = document.getElementById("daily-interest-collected");
+const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+
+function getStateApiCandidates(stateKey, includeCacheBuster) {
+  const query = includeCacheBuster ? "?t=" + Date.now() : "";
+  const path = "/api/state/" + encodeURIComponent(stateKey) + query;
+  const candidates = [path];
+
+  const currentOrigin = String(window.location.origin || "").replace(/\/+$/, "");
+  const fallbackOrigin = String(API_FALLBACK_ORIGIN || "").replace(/\/+$/, "");
+  if (fallbackOrigin && currentOrigin !== fallbackOrigin) {
+    candidates.push(API_FALLBACK_ORIGIN + path);
+  }
+
+  return [...new Set(candidates)];
+}
+
+async function fetchStateApi(stateKey, options, includeCacheBuster) {
+  const candidates = getStateApiCandidates(stateKey, includeCacheBuster);
+  let lastErrorResponse = null;
+  let lastNetworkError = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = candidates[index];
+    try {
+      const res = await fetch(url, options);
+      if (!res.ok && index < candidates.length - 1) {
+        lastErrorResponse = res;
+        continue;
+      }
+      return res;
+    } catch (error) {
+      lastNetworkError = error;
+    }
+  }
+
+  if (lastErrorResponse) {
+    return lastErrorResponse;
+  }
+
+  throw lastNetworkError || new Error("Failed to reach state API");
+}
 
 function getRecords() {
   try {
@@ -227,11 +268,15 @@ function computeOutstandingBalance(record) {
     return getWeeklyRunningState(record).outstandingBalance;
   }
   
-  // For other loans, use simple calculation
+  // Keep Monthly 60-day fixed loan math consistent with Officer Dashboard.
   const amount = Number(record.amount || 0);
-  const interestRate = Number(record.interestRate || 0);
+  const interestRate = record.payableWithin === "monthly_60_fixed"
+    ? 10
+    : Number(record.interestRate || 0);
   const monthlyInterestAmount = amount * (interestRate / 100);
-  const totalPayable = amount + monthlyInterestAmount;
+  const totalPayable = record.payableWithin === "monthly_60_fixed"
+    ? amount + monthlyInterestAmount * 2
+    : amount + monthlyInterestAmount;
   const totalPaid = Number(record.totalPaidAmount ?? record.paidAmount ?? 0);
   
   return Math.max(0, totalPayable - totalPaid);
@@ -423,17 +468,31 @@ function renderTypeBreakdown(records) {
   if (typeSettledBalance) typeSettledBalance.textContent = formatCurrency(settledBalance);
 }
 
-function getOfficerOpenLoanCount(officerName) {
+async function getOfficerOutstandingBalance(officerName) {
   try {
     const key = `mgi_officer_records_${officerName}`;
-    const records = JSON.parse(localStorage.getItem(key)) || [];
-    return records.filter((record) => computeOutstandingBalance(record) > 0).length;
+    const res = await fetchStateApi(key, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
+    }, true);
+    if (!res.ok) {
+      return 0;
+    }
+    const data = await res.json();
+    const records = Array.isArray(data?.payload) ? data.payload : [];
+    return records.reduce((sum, record) => {
+      const outstanding = computeOutstandingBalance(record);
+      return outstanding > 0 ? sum + outstanding : sum;
+    }, 0);
   } catch {
     return 0;
   }
 }
 
-function renderOfficerCounts() {
+async function renderOfficerCounts() {
   const officers = [
     { el: officerCountJunJun,   name: "JunJun" },
     { el: officerCountAga,      name: "Aga" },
@@ -442,8 +501,11 @@ function renderOfficerCounts() {
     { el: officerCountJambi,    name: "Jambi" },
     { el: officerCountMariaJoy, name: "Maria Joy" },
   ];
-  officers.forEach(({ el, name }) => {
-    if (el) el.textContent = String(getOfficerOpenLoanCount(name));
+  const balances = await Promise.all(
+    officers.map(({ name }) => getOfficerOutstandingBalance(name))
+  );
+  officers.forEach(({ el }, index) => {
+    if (el) el.textContent = formatCurrency(balances[index]);
   });
 }
 
@@ -606,7 +668,7 @@ function applyTheme(theme) {
 }
 
 function initializeTheme() {
-  const savedTheme = localStorage.getItem(THEME_KEY) || "white";
+  const savedTheme = localStorage.getItem(THEME_KEY) || "black";
   applyTheme(savedTheme);
 }
 

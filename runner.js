@@ -206,7 +206,7 @@ function applyTheme(theme) {
 }
 
 function initializeTheme() {
-  const savedTheme = localStorage.getItem(THEME_KEY) || "white";
+  const savedTheme = localStorage.getItem(THEME_KEY) || "black";
   applyTheme(savedTheme);
 }
 

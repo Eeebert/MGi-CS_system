@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MGI - Admin Credentials</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .admin-page {
+        width: 100vw;
+        min-height: 100vh;
+        margin: 0;
+        padding: 6.2rem 0.75rem 0.75rem;
+        box-sizing: border-box;
+      }
+
+      .admin-layout {
+        display: grid;
+        grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+      }
+
+      .admin-card {
+        border: 1px solid rgba(108, 145, 177, 0.45);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(18, 28, 40, 0.96), rgba(11, 18, 28, 0.97));
+        box-shadow: 0 14px 28px rgba(2, 8, 16, 0.52), inset 0 1px 0 rgba(170, 207, 236, 0.1);
+      }
+
+      .admin-title {
+        margin: 0 0 8px;
+        font-size: 1rem;
+        color: #eef4fb;
+      }
+
+      .admin-subtitle {
+        margin: -2px 0 10px;
+        font-size: 0.78rem;
+        color: #c4d1df;
+      }
+
+      .admin-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .admin-field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .admin-field label {
+        font-size: 0.76rem;
+        font-weight: 700;
+        color: #dde7f2;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .admin-input-wrap input {
+        color: #f3f7fc;
+      }
+
+      .admin-input-wrap input::placeholder {
+        color: #a9bacb;
+      }
+
+      .admin-input-wrap {
+        position: relative;
+        display: block;
+      }
+
+      .admin-input-wrap input {
+        width: 100%;
+        padding-right: 42px;
+      }
+
+      .admin-eye-btn {
+        width: 34px;
+        height: 30px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 9px;
+        position: absolute;
+        top: 50%;
+        right: 6px;
+        transform: translateY(-50%);
+      }
+
+      .admin-eye-btn .eye-icon {
+        width: 14px;
+        height: 9px;
+        border: 2px solid #d8e5f2;
+        border-radius: 50% / 62%;
+        position: relative;
+      }
+
+      .admin-eye-btn .eye-icon::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: #d8e5f2;
+        transform: translate(-50%, -50%);
+      }
+
+      .admin-eye-btn.is-revealed .eye-icon::before {
+        content: "";
+        position: absolute;
+        left: -2px;
+        right: -2px;
+        top: 50%;
+        border-top: 2px solid #ff8f8f;
+        transform: rotate(-24deg);
+        transform-origin: center;
+      }
+
+      .admin-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .admin-message {
+        min-height: 1.2em;
+        margin: 4px 0 0;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #b42318;
+      }
+
+      .admin-message.success {
+        color: #106145;
+      }
+
+      .admin-hidden {
+        display: none;
+      }
+
+      @media (max-width: 900px) {
+        .admin-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="theme-black">
+    <div class="bg-shape shape-a" aria-hidden="true"></div>
+    <div class="bg-shape shape-b" aria-hidden="true"></div>
+
+    <header class="brand-card topbar">
+      <img src="images/mgi_logo.png" alt="Morris Gilbert Inso logo" class="logo" />
+      <div>
+        <h1>Morris Gilbert Inso</h1>
+        <p>Admin Credentials Dashboard</p>
+      </div>
+    </header>
+
+    <main class="admin-page">
+      <div class="admin-layout">
+      <section id="admin-gate-panel" class="panel admin-card" style="padding: 14px;">
+        <h2 class="admin-title">Admin Access</h2>
+        <p class="admin-subtitle">Enter admin password to open credential controls.</p>
+        <div id="admin-gate" class="admin-grid">
+          <div class="admin-field">
+            <label for="admin-access-password">Admin Password</label>
+            <div class="admin-input-wrap">
+              <input id="admin-access-password" type="password" autocomplete="current-password" />
+              <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="admin-access-password" aria-label="Show password">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="admin-actions">
+            <button id="admin-unlock" type="button" class="btn-primary">Unlock</button>
+          </div>
+          <p id="admin-gate-message" class="admin-message" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section id="admin-settings-panel" class="panel admin-card admin-hidden" style="padding: 14px;">
+        <h2 class="admin-title">Credentials</h2>
+        <p class="admin-subtitle">Show, update, and save authentication settings.</p>
+        <form id="admin-settings-form" class="admin-grid" novalidate>
+          <div class="admin-field">
+            <label for="main-username">Bookkeeper Login Username</label>
+            <div class="admin-input-wrap">
+              <input id="main-username" type="password" autocomplete="off" />
+              <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="main-username" aria-label="Show username">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-field">
+            <label for="main-password">Bookkeeper Login Password</label>
+            <div class="admin-input-wrap">
+              <input id="main-password" type="password" autocomplete="new-password" />
+              <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="main-password" aria-label="Show password">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-field">
+            <label for="portfolio-username">Portfolio Username</label>
+            <div class="admin-input-wrap">
+              <input id="portfolio-username" type="password" autocomplete="off" />
+              <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="portfolio-username" aria-label="Show username">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-field">
+            <label for="portfolio-password">Portfolio Password</label>
+            <div class="admin-input-wrap">
+              <input id="portfolio-password" type="password" autocomplete="new-password" />
+              <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="portfolio-password" aria-label="Show password">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-field">
+            <label for="admin-password">Admin Password</label>
+            <div class="admin-input-wrap">
+              <input id="admin-password" type="password" autocomplete="new-password" />
+              <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="admin-password" aria-label="Show password">
+                <span class="eye-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-actions">
+            <button id="admin-save" type="submit" class="btn-primary">Save Credentials</button>
+            <button id="admin-reset-defaults" type="button" class="btn-danger">Reset Defaults</button>
+          </div>
+          <p id="admin-settings-message" class="admin-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      </div>
+    </main>
+
+    <script src="admin.js"></script>
+  </body>
+</html>

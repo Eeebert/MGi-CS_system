@@ -29,6 +29,10 @@ body {
   perspective: 1200px;
 }
 
+body.login-locked {
+  overflow: hidden;
+}
+
 .bg-shape {
   position: fixed;
   z-index: -1;
@@ -420,7 +424,10 @@ body {
 
 body.theme-black {
   color: #e7edf3;
-  background: linear-gradient(145deg, #0f141a 0%, #1a212a 100%);
+  background:
+    radial-gradient(circle at 14% 18%, rgba(42, 120, 255, 0.18) 0, transparent 34%),
+    radial-gradient(circle at 86% 16%, rgba(0, 198, 140, 0.14) 0, transparent 30%),
+    linear-gradient(145deg, #070b12 0%, #0d1520 45%, #111c29 100%);
 }
 
 body.theme-black .bg-shape {
@@ -429,9 +436,10 @@ body.theme-black .bg-shape {
 
 body.theme-black .brand-card,
 body.theme-black .panel {
-  background: linear-gradient(145deg, #1a232d, #121921);
-  border-color: rgba(109, 129, 147, 0.35);
+  background: linear-gradient(145deg, rgba(22, 31, 43, 0.95), rgba(12, 18, 27, 0.96));
+  border-color: rgba(89, 123, 151, 0.46);
   color: #e7edf3;
+  box-shadow: 0 18px 34px rgba(2, 8, 16, 0.52), inset 0 1px 0 rgba(165, 204, 233, 0.09);
 }
 
 body.theme-black .brand-card::before,
@@ -440,8 +448,8 @@ body.theme-black .panel::before {
 }
 
 body.theme-black .side-drawer {
-  background: #121921;
-  border-left-color: #2b3947;
+  background: linear-gradient(180deg, #0f1722, #0b121c);
+  border-left-color: #2f475d;
 }
 
 body.theme-black .side-drawer-theme-label,
@@ -470,9 +478,10 @@ body.theme-black .theme-option input[type="radio"]::after {
 body.theme-black input,
 body.theme-black select,
 body.theme-black textarea {
-  background: #1f2a34;
+  background: #18232f;
   color: #edf3f8;
-  border-color: #3e5568;
+  border-color: #44627a;
+  box-shadow: inset 0 1px 0 rgba(194, 220, 242, 0.06), 0 0 0 1px rgba(13, 26, 39, 0.45);
 }
 
 body.theme-black input::placeholder,
@@ -510,8 +519,8 @@ body.theme-black .payment-confirm-amount {
 }
 
 body.theme-black .table-wrap {
-  background: #1c2630;
-  border-color: #3a4d5e;
+  background: linear-gradient(180deg, #18232e, #141d27);
+  border-color: #3f5b72;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 16px 30px rgba(0, 0, 0, 0.28);
 }
 
@@ -532,13 +541,23 @@ body.theme-black tbody tr.past-due-row:hover {
 }
 
 body.theme-black .btn-secondary {
-  background: linear-gradient(180deg, #2e3c48, #23313d);
+  background: linear-gradient(180deg, #32495f, #243748);
   color: #e7edf3;
+  border: 1px solid rgba(110, 157, 191, 0.45);
+  box-shadow: 0 0 18px rgba(66, 159, 212, 0.16), inset 0 1px 0 rgba(219, 237, 250, 0.12);
 }
 
 body.theme-black .btn-danger {
-  background: linear-gradient(180deg, #4a2727, #3a1f1f);
+  background: linear-gradient(180deg, #5f2b2b, #3d1d1d);
   color: #ffc8c1;
+  border: 1px solid rgba(234, 125, 125, 0.36);
+}
+
+body.theme-black .btn-primary {
+  background: linear-gradient(180deg, #00b57a, #0d8e69);
+  color: #f2fffa;
+  border: 1px solid rgba(87, 224, 176, 0.45);
+  box-shadow: 0 0 20px rgba(7, 183, 132, 0.24), inset 0 1px 0 rgba(225, 255, 245, 0.14);
 }
 
 body.theme-black .btn-hamburger {
@@ -563,6 +582,10 @@ body.theme-black .portfolio-label {
   right: 0.45rem;
   z-index: 20;
   box-shadow: 0 18px 36px rgba(19, 41, 61, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.theme-black .topbar {
+  box-shadow: 0 18px 34px rgba(1, 6, 12, 0.58), 0 0 28px rgba(40, 114, 196, 0.2), inset 0 1px 0 rgba(168, 211, 243, 0.11);
 }
 
 .records-panel {
@@ -991,7 +1014,8 @@ button:active {
 }
 
 .table-wrap {
-  overflow-x: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid #d8e3eb;
   border-radius: 12px;
   background: #ffffffd6;
@@ -1001,7 +1025,7 @@ button:active {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 0;
+  min-width: 1360px;
   table-layout: fixed;
 }
 
@@ -1421,6 +1445,79 @@ th {
   }
 }
 
+@media (max-width: 900px) {
+  .container {
+    padding-top: 5rem;
+    gap: 0.35rem;
+  }
+
+  .panel,
+  .brand-card {
+    border-radius: 10px;
+  }
+
+  .table-tools {
+    gap: 0.28rem;
+  }
+
+  .filter-control,
+  .test-date-control {
+    min-width: 112px;
+  }
+
+  .filter-control span,
+  .test-date-control span {
+    font-size: 0.58rem;
+  }
+
+  .records-panel .table-wrap {
+    overflow-x: auto;
+  }
+
+  .records-panel table {
+    min-width: 1080px;
+    table-layout: auto;
+  }
+
+  .records-panel th,
+  .records-panel td {
+    white-space: nowrap;
+    padding: 0.14rem 0.16rem;
+  }
+
+  .records-panel th {
+    font-size: 0.5rem;
+  }
+
+  .records-panel td {
+    font-size: 0.58rem;
+  }
+
+  .records-panel .mini-note,
+  .records-panel .per-period {
+    font-size: 0.56rem;
+  }
+
+  .records-panel .btn-secondary,
+  .records-panel .btn-pay,
+  .records-panel .btn-danger,
+  .records-panel .btn-primary {
+    font-size: 0.58rem;
+    padding: 0.16rem 0.28rem;
+  }
+
+  .records-panel .due-date-input,
+  .records-panel .move-date-input,
+  .records-panel .remarks-input,
+  .records-panel .weekly-amount-input,
+  .records-panel .collectible-edit-input,
+  .records-panel .arrears-input,
+  .records-panel .other-arrears-input {
+    font-size: 0.58rem;
+    padding: 0.14rem 0.22rem;
+  }
+}
+
 .loading-screen {
   position: fixed;
   inset: 0;
@@ -1433,18 +1530,19 @@ th {
 }
 
 .login-shell {
-  width: min(420px, 92vw);
-  padding: 0.35rem;
+  width: min(340px, 88vw);
+  padding: 0.2rem;
 }
 
 .login-form {
   display: grid;
-  gap: 0.78rem;
+  gap: 0.56rem;
+  justify-items: center;
 }
 
 .login-form h2 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.15rem;
   color: #eef6ff;
   text-align: center;
   letter-spacing: 0.4px;
@@ -1452,14 +1550,17 @@ th {
 
 .login-form label {
   color: #d8e8f6;
-  font-size: 1.05rem;
+  font-size: 0.86rem;
   font-weight: 600;
+  width: min(240px, 100%);
 }
 
 .login-form input {
-  font-size: 1.08rem;
-  padding: 0.66rem 0.78rem;
-  border-radius: 12px;
+  font-size: 0.8rem;
+  padding: 0.32rem 0.44rem;
+  width: 100%;
+  display: block;
+  border-radius: 10px;
   border: 1px solid #4d6985;
   background: rgba(255, 255, 255, 0.96);
 }
@@ -1509,15 +1610,16 @@ th {
 }
 
 .login-submit {
-  margin-top: 0.3rem;
-  font-size: 1.05rem;
-  padding: 0.66rem 0.8rem;
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.62rem;
+  width: min(240px, 100%);
 }
 
 .login-message {
   margin: 0.1rem 0 0;
   min-height: 1.2em;
-  font-size: 1rem;
+  font-size: 0.84rem;
   font-weight: 700;
   color: #ffc8c8;
   text-align: center;
@@ -1533,7 +1635,7 @@ th {
 }
 
 .loading-logo {
-  width: min(320px, 72vw);
+  width: min(220px, 55vw);
   display: block;
   margin: 0 auto 0.95rem;
   animation: popSlow 1.3s ease-out;
