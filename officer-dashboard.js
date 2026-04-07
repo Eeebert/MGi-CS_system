@@ -541,6 +541,16 @@ function mirrorOfficerRecordsToLocalStorage(records) {
   }
 }
 
+function readOfficerRecordsFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(getOfficerStorageKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
   mirrorOfficerRecordsToLocalStorage(recordsCache);
@@ -620,6 +630,10 @@ async function loadRecordsFromServer() {
     }, true);
     if (!res.ok) {
       console.error("[sync][officer] Fetch failed", { status: res.status, statusText: res.statusText });
+      const localRecords = readOfficerRecordsFromLocalStorage();
+      if (localRecords.length > 0) {
+        recordsCache = localRecords;
+      }
       setSyncStatus("error", `server error (${res.status})`);
       return;
     }
@@ -679,6 +693,10 @@ async function loadRecordsFromServer() {
     setSyncStatus("error", "invalid server payload");
   } catch {
     console.error("[sync][officer] Network error while fetching state", { officer: currentOfficer });
+    const localRecords = readOfficerRecordsFromLocalStorage();
+    if (localRecords.length > 0) {
+      recordsCache = localRecords;
+    }
     setSyncStatus("error", "offline (server-only mode)");
   }
 }
@@ -2235,6 +2253,69 @@ function setBackupStatusNote(state, text) {
   backupStatusNote.textContent = text;
 }
 
+function getBackupApiCandidates() {
+  const path = "/api/backup/export";
+  const candidates = [path];
+  const currentOrigin = String(window.location.origin || "").replace(/\/+$/, "");
+  const fallbackOrigin = String(API_FALLBACK_ORIGIN || "").replace(/\/+$/, "");
+  if (fallbackOrigin && currentOrigin !== fallbackOrigin) {
+    candidates.push(`${fallbackOrigin}${path}`);
+  }
+  return [...new Set(candidates)];
+}
+
+async function fetchBackupApi() {
+  const candidates = getBackupApiCandidates();
+  let lastErrorResponse = null;
+  let lastNetworkError = null;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const url = candidates[index];
+    try {
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store, max-age=0",
+          Pragma: "no-cache",
+        },
+      });
+      if (!res.ok && index < candidates.length - 1) {
+        lastErrorResponse = res;
+        continue;
+      }
+      return res;
+    } catch (error) {
+      lastNetworkError = error;
+    }
+  }
+
+  if (lastErrorResponse) {
+    return lastErrorResponse;
+  }
+
+  throw lastNetworkError || new Error("Failed to reach backup API");
+}
+
+async function refreshBackupHealthStatus() {
+  setBackupStatusNote("loading", "Backup status: checking...");
+  try {
+    const res = await fetchBackupApi();
+    if (res.ok) {
+      setBackupStatusNote("ok", "Backup status: full backup available");
+      return;
+    }
+
+    if (res.status === 503 || res.status === 404) {
+      setBackupStatusNote("warning", "Backup status: local-only fallback mode");
+      return;
+    }
+
+    setBackupStatusNote("warning", `Backup status: server issue (${res.status})`);
+  } catch {
+    setBackupStatusNote("warning", "Backup status: local-only fallback mode");
+  }
+}
+
 backupDataBtn?.addEventListener("click", () => {
   // Backup all localStorage data
   const allData = {
@@ -2384,7 +2465,7 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
 
   initializeTheme();
   ensureSyncStatusElement();
-  setBackupStatusNote("ok", "Backup status: full backup available");
+  refreshBackupHealthStatus();
   console.info("[session][officer] Startup", {
     officer: currentOfficer,
     loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",
@@ -2406,6 +2487,7 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
     if (!isServerWritePending && hasUnsyncedLocalChanges) {
       syncRecordsToServer(getRecords());
     }
+    refreshBackupHealthStatus();
     loadRecordsFromServer().then(() => renderRecords());
   });
 }

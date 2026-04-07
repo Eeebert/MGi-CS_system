@@ -583,7 +583,7 @@ async function refreshBackupHealthStatus() {
       return;
     }
 
-    if (res.status === 503) {
+    if (res.status === 503 || res.status === 404) {
       setBackupStatusNote("warning", "Backup status: local-only fallback mode");
       return;
     }
@@ -595,6 +595,8 @@ async function refreshBackupHealthStatus() {
 }
 
 const STORAGE_KEY = "mgi_loan_records";
+const OFFICER_STORAGE_KEY_PREFIX = "mgi_officer_records_";
+const DEFAULT_OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
@@ -641,6 +643,113 @@ let syncDebugState = {
   fetch: "idle",
   guard: "no",
 };
+
+function getOfficerStorageKey(officerName) {
+  return `${OFFICER_STORAGE_KEY_PREFIX}${officerName}`;
+}
+
+function getKnownOfficerNames() {
+  const officerNames = new Set(DEFAULT_OFFICER_NAMES);
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = String(localStorage.key(index) || "");
+      if (!key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) {
+        continue;
+      }
+      const officerName = key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim();
+      if (officerName) {
+        officerNames.add(officerName);
+      }
+    }
+  } catch {
+    // Ignore localStorage access errors.
+  }
+  return Array.from(officerNames);
+}
+
+function buildRecordFingerprint(record) {
+  return [
+    String(record?.name || "").trim().toUpperCase(),
+    String(record?.dateGranted || "").trim(),
+    String(Number(record?.amount || 0)),
+    String(record?.payableWithin || "").trim(),
+    String(record?.address || "").trim().toUpperCase(),
+    String(record?.contactNumber || "").trim(),
+  ].join("|");
+}
+
+function dedupeRecords(records) {
+  const seen = new Set();
+  const merged = [];
+
+  for (const record of records) {
+    const fingerprint = buildRecordFingerprint(record);
+    if (seen.has(fingerprint)) {
+      continue;
+    }
+    seen.add(fingerprint);
+    merged.push(record);
+  }
+
+  return merged;
+}
+
+function readCachedStateRecords(stateKey) {
+  try {
+    const raw = localStorage.getItem(stateKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getLocalOfficerRecords() {
+  const merged = getKnownOfficerNames().flatMap((officerName) => {
+    const records = readCachedStateRecords(getOfficerStorageKey(officerName));
+    return records.map((record) => ({
+      ...record,
+      accountOfficer: String(record?.accountOfficer || "").trim() || officerName,
+    }));
+  });
+
+  return dedupeRecords(merged);
+}
+
+async function loadStateRecords(stateKey, includeCacheBuster = true) {
+  try {
+    const res = await fetchStateApi(stateKey, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
+    }, includeCacheBuster);
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        records: [],
+      };
+    }
+
+    const data = await res.json().catch(() => null);
+    return {
+      ok: true,
+      status: res.status,
+      records: Array.isArray(data?.payload) ? data.payload : [],
+    };
+  } catch {
+    return {
+      ok: false,
+      status: null,
+      records: [],
+    };
+  }
+}
 
 function getAuthSettings() {
   try {
@@ -828,24 +937,37 @@ function mirrorRecordsToLocalStorage(records) {
   }
 }
 
+function readRecordsFromLocalStorage() {
+  return readCachedStateRecords(STORAGE_KEY);
+}
+
+// Strip records that leaked from officer dashboards (they have accountOfficer set).
+// Main dashboard records are never assigned an accountOfficer.
+function filterMainDashboardRecords(records) {
+  return (Array.isArray(records) ? records : []).filter(
+    (r) => !String(r?.accountOfficer || "").trim()
+  );
+}
+
 function setRecords(records) {
-  recordsCache = Array.isArray(records) ? records : [];
+  recordsCache = filterMainDashboardRecords(Array.isArray(records) ? records : []);
   mirrorRecordsToLocalStorage(recordsCache);
   lastLocalMutationAt = Date.now();
   hasUnsyncedLocalChanges = true;
   setSyncDebug({ save: `queued(${recordsCache.length})` });
-  syncRecordsToServer(records);
+  syncRecordsToServer(recordsCache);
 }
 
 async function syncRecordsToServer(records) {
   isServerWritePending = true;
   setSyncDebug({ save: "pending" });
+  const cleanRecords = filterMainDashboardRecords(records);
   try {
     const res = await fetchStateApi(STORAGE_KEY, {
       method: "PUT",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: records }),
+      body: JSON.stringify({ payload: cleanRecords }),
     }, false);
     if (!res.ok) {
       let errorDetail = "";
@@ -856,7 +978,7 @@ async function syncRecordsToServer(records) {
       throw new Error(`Failed to sync records (${res.status})${errorDetail ? `: ${errorDetail}` : ""}`);
     }
     hasUnsyncedLocalChanges = false;
-    setSyncDebug({ save: `ok(${records.length})` });
+    setSyncDebug({ save: `ok(${cleanRecords.length})` });
   } catch (error) {
     // Server-only mode: keep in-memory data for current session and show sync error.
     latestSyncIssue = error?.message || "Cannot save to server right now.";
@@ -877,27 +999,29 @@ async function loadRecordsFromServer() {
   });
 
   try {
-    const res = await fetchStateApi(STORAGE_KEY, {
-      cache: "no-store",
-      headers: {
-        "Cache-Control": "no-cache, no-store, max-age=0",
-        Pragma: "no-cache",
-      },
-    }, true);
-    if (!res.ok) {
-      console.error("[sync][main] Fetch failed", { status: res.status, statusText: res.statusText });
-      latestSyncIssue = `Server error ${res.status}: ${res.statusText || "Request failed"}`;
-      setDiagnosticsPanel("error", "Cannot load latest records from server.", latestSyncIssue);
-      setSyncStatus("error", `server error (${res.status})`);
-      setSyncDebug({ fetch: `http-${res.status}` });
+    const globalResult = await loadStateRecords(STORAGE_KEY);
+
+    if (!globalResult.ok) {
+      const localRecords = filterMainDashboardRecords(readCachedStateRecords(STORAGE_KEY));
+      if (localRecords.length > 0) {
+        recordsCache = localRecords;
+        mirrorRecordsToLocalStorage(recordsCache);
+      }
+      latestSyncIssue = "Cannot load latest records from server. Using local cached data.";
+      setDiagnosticsPanel("warning", "Using local cached records.", latestSyncIssue);
+      setSyncStatus("error", "local fallback");
+      setSyncDebug({ fetch: "fallback-local", guard: "yes" });
       return;
     }
 
-    const data = await res.json();
-    if (Array.isArray(data.payload)) {
+    const rawServerRecords = Array.isArray(globalResult.records) ? globalResult.records : [];
+    const serverRecords = filterMainDashboardRecords(rawServerRecords);
+    const serverWasContaminated = rawServerRecords.length !== serverRecords.length;
+
+    if (Array.isArray(serverRecords)) {
       const shouldProtectUnsyncedData = (
         hasUnsyncedLocalChanges &&
-        data.payload.length === 0 &&
+        serverRecords.length === 0 &&
         recordsCache.length > 0
       );
       if (shouldProtectUnsyncedData) {
@@ -905,11 +1029,11 @@ async function loadRecordsFromServer() {
           cacheRecords: recordsCache.length,
         });
         setSyncStatus("error", "save pending retry");
-        setSyncDebug({ fetch: `count(${data.payload.length})`, guard: "unsynced-local" });
+        setSyncDebug({ fetch: `count(${serverRecords.length})`, guard: "unsynced-local" });
         return;
       }
       const shouldGuardEmptyOverwrite = (
-        data.payload.length === 0 &&
+        serverRecords.length === 0 &&
         recordsCache.length > 0 &&
         Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
       );
@@ -918,54 +1042,39 @@ async function loadRecordsFromServer() {
           cacheRecords: recordsCache.length,
         });
         setSyncStatus("syncing", "waiting server update");
-        setSyncDebug({ fetch: `count(${data.payload.length})`, guard: "yes" });
+        setSyncDebug({ fetch: `count(${serverRecords.length})`, guard: "yes" });
         return;
       }
       if (isServerWritePending) {
         console.info("[sync][main] Skipping server apply while save is pending");
         setSyncStatus("syncing", "save in progress");
-        setSyncDebug({ fetch: `count(${data.payload.length})`, guard: "write-pending" });
+        setSyncDebug({ fetch: `count(${serverRecords.length})`, guard: "write-pending" });
         return;
       }
-      recordsCache = data.payload;
+      recordsCache = serverRecords;
       mirrorRecordsToLocalStorage(recordsCache);
-      console.info("[sync][main] Fetch success", { records: data.payload.length });
+      console.info("[sync][main] Fetch success", { records: serverRecords.length });
       latestSyncIssue = "";
-      setSyncStatus("ok", `updated (${data.payload.length} records)`);
-      setSyncDebug({ fetch: `ok(${data.payload.length})`, guard: "no" });
+      setSyncStatus("ok", `updated (${serverRecords.length} records)`);
+      setSyncDebug({ fetch: `ok(${serverRecords.length})`, guard: "no" });
+      // Server DB had officer records leaked in — push clean data back to fix it.
+      if (serverWasContaminated) {
+        console.info("[sync][main] Purging contaminated officer records from server DB", {
+          before: rawServerRecords.length,
+          after: serverRecords.length,
+        });
+        syncRecordsToServer(recordsCache);
+      }
       return;
     }
-
-    if (data.payload === null) {
-      recordsCache = [];
-      mirrorRecordsToLocalStorage(recordsCache);
-      console.info("[sync][main] Server has no payload yet");
-      latestSyncIssue = "";
-      setSyncStatus("ok", "updated (0 records)");
-      setSyncDebug({ fetch: "payload-null", guard: "no" });
-      return;
-    }
-
-    // If payload is an object, log and display its structure for debugging
-    let payloadType = typeof data.payload;
-    let payloadKeys = data.payload && typeof data.payload === "object" ? Object.keys(data.payload) : null;
-    let payloadPreview = "";
-    try {
-      payloadPreview = JSON.stringify(data.payload, null, 2);
-    } catch {}
-
-    console.warn("[sync][main] Unexpected payload shape", { payloadType, payloadKeys, payloadPreview });
-    latestSyncIssue = `Invalid server payload format. Type: ${payloadType}, Keys: ${payloadKeys ? payloadKeys.join(", ") : "-"}`;
-    setDiagnosticsPanel(
-      "error",
-      "Server returned an invalid payload. See below for details.",
-      `${latestSyncIssue}\nPreview: ${payloadPreview}`
-    );
-    setSyncStatus("error", "invalid server payload");
-    setSyncDebug({ fetch: "invalid-payload" });
   } catch {
     // Network issue in server-only mode.
     console.error("[sync][main] Network error while fetching state");
+    const localRecords = filterMainDashboardRecords(readCachedStateRecords(STORAGE_KEY));
+    if (localRecords.length > 0) {
+      recordsCache = localRecords;
+      mirrorRecordsToLocalStorage(recordsCache);
+    }
     latestSyncIssue = "Network error while loading server data.";
     setDiagnosticsPanel("error", "Network problem while syncing.", latestSyncIssue);
     setSyncStatus("error", "offline (server-only mode)");
@@ -4653,11 +4762,12 @@ setInterval(() => {
 
 // If records are changed in another tab, refresh this page automatically.
 window.addEventListener("storage", (event) => {
-  if (event.key === STORAGE_KEY) {
+  const key = String(event.key || "");
+  if (key === STORAGE_KEY) {
     if (hasOpenInlineEditor()) {
       return;
     }
-    renderRecords();
+    loadRecordsFromServer().then(() => renderRecords());
   }
 });
 

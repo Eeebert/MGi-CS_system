@@ -43,23 +43,117 @@ const portfolioLogoutBtn = document.getElementById("portfolio-logout");
 const dailyPrincipalCollected = document.getElementById("daily-principal-collected");
 const dailyInterestCollected = document.getElementById("daily-interest-collected");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+const OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
+const OFFICER_STORAGE_KEY_PREFIX = "mgi_officer_records_";
 let recordsCache = [];
 let didLoadServerRecords = false;
 
-function getLocalMainRecords() {
+const officerSummaryCards = [
+  { valueEl: officerCountJunJun, fallbackName: "JunJun" },
+  { valueEl: officerCountAga, fallbackName: "Aga" },
+  { valueEl: officerCountJomar, fallbackName: "Jomar" },
+  { valueEl: officerCountJames, fallbackName: "James" },
+  { valueEl: officerCountJambi, fallbackName: "Jambi" },
+  { valueEl: officerCountMariaJoy, fallbackName: "Maria Joy" },
+].map((item) => ({
+  ...item,
+  labelEl: item.valueEl?.closest("article")?.querySelector(".portfolio-type-label") || null,
+  metaEl: item.valueEl?.closest("article")?.querySelector("p") || null,
+}));
+
+function getOfficerStorageKey(officerName) {
+  return `mgi_officer_records_${officerName}`;
+}
+
+function getKnownOfficerNames() {
+  const names = new Set(OFFICER_NAMES);
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) {
-      return { hasValue: false, records: [] };
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = String(localStorage.key(index) || "");
+      if (!key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) {
+        continue;
+      }
+      const officerName = key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim();
+      if (officerName) {
+        names.add(officerName);
+      }
+    }
+  } catch {
+    // Ignore localStorage access errors.
+  }
+  return Array.from(names);
+}
+
+function buildRecordFingerprint(record) {
+  return [
+    String(record?.name || "").trim().toUpperCase(),
+    String(record?.dateGranted || "").trim(),
+    String(Number(record?.amount || 0)),
+    String(record?.payableWithin || "").trim(),
+    String(record?.address || "").trim().toUpperCase(),
+    String(record?.contactNumber || "").trim(),
+  ].join("|");
+}
+
+function dedupeRecords(records) {
+  const seen = new Set();
+  const merged = [];
+
+  for (const record of records) {
+    const fingerprint = buildRecordFingerprint(record);
+    if (seen.has(fingerprint)) {
+      continue;
+    }
+    seen.add(fingerprint);
+    merged.push(record);
+  }
+
+  return merged;
+}
+
+function readCachedStateRecords(stateKey) {
+  try {
+    const raw = localStorage.getItem(stateKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getLocalOfficerRecords() {
+  const merged = getKnownOfficerNames().flatMap((officerName) => {
+    const stateKey = getOfficerStorageKey(officerName);
+    const records = readCachedStateRecords(stateKey);
+    return records.map((record) => ({
+      ...record,
+      accountOfficer: String(record?.accountOfficer || "").trim() || officerName,
+    }));
+  });
+
+  return dedupeRecords(merged);
+}
+
+async function loadStateRecords(stateKey, includeCacheBuster = true) {
+  try {
+    const res = await fetchStateApi(
+      stateKey,
+      {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      },
+      includeCacheBuster
+    );
+
+    if (!res.ok) {
+      return [];
     }
 
-    const parsed = JSON.parse(raw);
-    return {
-      hasValue: true,
-      records: Array.isArray(parsed) ? parsed : [],
-    };
+    const data = await res.json().catch(() => null);
+    return Array.isArray(data?.payload) ? data.payload : [];
   } catch {
-    return { hasValue: false, records: [] };
+    return [];
   }
 }
 
@@ -108,35 +202,46 @@ function getRecords() {
     return Array.isArray(recordsCache) ? recordsCache : [];
   }
 
-  return getLocalMainRecords().records;
+  const localOfficerRecords = getLocalOfficerRecords();
+  const localGlobalRecords = readCachedStateRecords(STORAGE_KEY).filter(
+    (r) => !String(r?.accountOfficer || "").trim()
+  );
+  const merged = dedupeRecords([...localOfficerRecords, ...localGlobalRecords]);
+  return merged.length > 0 ? merged : localGlobalRecords;
 }
 
 async function loadRecordsFromServer() {
-  const localState = getLocalMainRecords();
-  if (localState.hasValue) {
-    recordsCache = localState.records;
-    didLoadServerRecords = true;
-    return;
-  }
+  const officerNames = getKnownOfficerNames();
+  const officerStateKeys = officerNames.map(getOfficerStorageKey);
 
   try {
-    const res = await fetchStateApi(
-      STORAGE_KEY,
-      {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-      },
-      true
+    const [officerPayloads, globalRecords] = await Promise.all([
+      Promise.all(
+        officerStateKeys.map((stateKey, index) => loadStateRecords(stateKey).then((records) => {
+          const officerName = officerNames[index];
+          return records.map((record) => ({
+            ...record,
+            accountOfficer: String(record?.accountOfficer || "").trim() || officerName,
+          }));
+        }))
+      ),
+      loadStateRecords(STORAGE_KEY),
+    ]);
+
+    const mergedOfficerRecords = dedupeRecords(officerPayloads.flat());
+
+    // Global records from the main dashboard have no accountOfficer — exclude any
+    // that were previously contaminated (officer records leaked into the global key).
+    const cleanGlobalRecords = globalRecords.filter(
+      (r) => !String(r?.accountOfficer || "").trim()
     );
 
-    if (res.ok) {
-      const data = await res.json().catch(() => null);
-      if (Array.isArray(data?.payload)) {
-        recordsCache = data.payload;
-        didLoadServerRecords = true;
-        return;
-      }
+    const allRecords = dedupeRecords([...mergedOfficerRecords, ...cleanGlobalRecords]);
+
+    if (allRecords.length > 0) {
+      recordsCache = allRecords;
+      didLoadServerRecords = true;
+      return;
     }
   } catch {
     // Fall back to localStorage-backed records when server state is unavailable.
@@ -522,44 +627,63 @@ function renderTypeBreakdown(records) {
   if (typeSettledBalance) typeSettledBalance.textContent = formatCurrency(settledBalance);
 }
 
-async function getOfficerOutstandingBalance(officerName) {
-  try {
-    const key = `mgi_officer_records_${officerName}`;
-    const res = await fetchStateApi(key, {
-      cache: "no-store",
-      headers: {
-        "Cache-Control": "no-cache, no-store, max-age=0",
-        Pragma: "no-cache",
-      },
-    }, true);
-    if (!res.ok) {
-      return 0;
-    }
-    const data = await res.json();
-    const records = Array.isArray(data?.payload) ? data.payload : [];
-    return records.reduce((sum, record) => {
-      const outstanding = computeOutstandingBalance(record);
-      return outstanding > 0 ? sum + outstanding : sum;
-    }, 0);
-  } catch {
-    return 0;
+function getOfficerNameFromRecord(record) {
+  const directName = String(record?.accountOfficer || "").trim();
+  if (directName) {
+    return directName;
   }
+  const fallbackName = String(record?.officerName || record?.officer || "").trim();
+  return fallbackName;
 }
 
-async function renderOfficerCounts() {
-  const officers = [
-    { el: officerCountJunJun,   name: "JunJun" },
-    { el: officerCountAga,      name: "Aga" },
-    { el: officerCountJomar,    name: "Jomar" },
-    { el: officerCountJames,    name: "James" },
-    { el: officerCountJambi,    name: "Jambi" },
-    { el: officerCountMariaJoy, name: "Maria Joy" },
-  ];
-  const balances = await Promise.all(
-    officers.map(({ name }) => getOfficerOutstandingBalance(name))
-  );
-  officers.forEach(({ el }, index) => {
-    if (el) el.textContent = formatCurrency(balances[index]);
+function renderOfficerCounts(records) {
+  const statsByOfficer = new Map();
+
+  records.forEach((record) => {
+    const officerName = getOfficerNameFromRecord(record);
+    if (!officerName) {
+      return;
+    }
+    const outstanding = computeOutstandingBalance(record);
+    const prev = statsByOfficer.get(officerName) || { balance: 0, openCount: 0 };
+    const nextBalance = prev.balance + Math.max(0, outstanding);
+    const nextOpenCount = outstanding > 0 ? prev.openCount + 1 : prev.openCount;
+    statsByOfficer.set(officerName, {
+      balance: nextBalance,
+      openCount: nextOpenCount,
+    });
+  });
+
+  const ranked = Array.from(statsByOfficer.entries())
+    .sort((a, b) => b[1].balance - a[1].balance);
+
+  const cardCount = officerSummaryCards.length;
+  const displayRows = ranked.slice(0, cardCount);
+
+  if (displayRows.length < cardCount) {
+    const usedNames = new Set(displayRows.map(([name]) => name));
+    OFFICER_NAMES.forEach((name) => {
+      if (displayRows.length >= cardCount || usedNames.has(name)) {
+        return;
+      }
+      displayRows.push([name, statsByOfficer.get(name) || { balance: 0, openCount: 0 }]);
+      usedNames.add(name);
+    });
+  }
+
+  officerSummaryCards.forEach((card, index) => {
+    const [name, stats] = displayRows[index] || [card.fallbackName, { balance: 0, openCount: 0 }];
+    const openCount = Number(stats?.openCount || 0);
+    const balance = Number(stats?.balance || 0);
+    if (card.labelEl) {
+      card.labelEl.textContent = name;
+    }
+    if (card.metaEl) {
+      card.metaEl.textContent = `${openCount} open account${openCount === 1 ? "" : "s"}`;
+    }
+    if (card.valueEl) {
+      card.valueEl.textContent = formatCurrency(balance);
+    }
   });
 }
 
@@ -673,7 +797,7 @@ function renderPortfolio() {
 
   renderDailyCollections(allRecords);
 
-  renderOfficerCounts();
+  renderOfficerCounts(allRecords);
 }
 
 portfolioDateFilterInput?.addEventListener("change", () => {
@@ -775,10 +899,9 @@ if (sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
 }
 
 window.addEventListener("storage", (event) => {
-  if (event.key === STORAGE_KEY) {
-    recordsCache = getLocalMainRecords().records;
-    didLoadServerRecords = true;
-    renderPortfolio();
+  const key = String(event.key || "");
+  if (key === STORAGE_KEY || key.startsWith("mgi_officer_records_")) {
+    loadRecordsFromServer().then(() => renderPortfolio());
   }
 });
 

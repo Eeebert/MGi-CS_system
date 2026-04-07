@@ -32,11 +32,20 @@ app.use((req, res, next) => {
 });
 
 // 2. STRICT CORS - Only allow same origin or specific trusted origins
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean) || [
-  "http://localhost:5500",
-  "http://localhost:3000",
-  "https://mgi-cs-system.onrender.com",
-];
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = configuredOrigins.length > 0
+  ? configuredOrigins
+  : [
+      "http://localhost:5500",
+      "http://localhost:3000",
+      "http://127.0.0.1:5500",
+      "http://127.0.0.1:3000",
+      "https://mgi-cs-system.onrender.com",
+    ];
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -199,6 +208,28 @@ async function ensureSchema() {
         );
         
         CREATE INDEX IF NOT EXISTS idx_app_state_updated ON app_state(updated_at DESC);
+      `);
+
+      // Backward-compatible migration for databases created by older server versions.
+      await pool.query(`
+        ALTER TABLE app_state
+        ADD COLUMN IF NOT EXISTS pii_encrypted BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS checksum TEXT,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_by TEXT,
+        ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+      `);
+
+      await pool.query(`
+        UPDATE app_state
+        SET created_at = NOW()
+        WHERE created_at IS NULL;
+      `);
+
+      await pool.query(`
+        UPDATE app_state
+        SET version = 1
+        WHERE version IS NULL;
       `);
       
       // Audit trail table

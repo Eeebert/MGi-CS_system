@@ -2661,17 +2661,19 @@ body.officer-page #loan-entry-panel {
   }
 
   .record-adjustment-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.18rem;
   }
 
   .record-adjustment-controls > .move-date-display-btn,
   .record-adjustment-controls > .arrears-display-btn,
   .record-adjustment-controls > .other-arrears-display-btn,
   .record-adjustment-controls > .open-remarks-btn {
-    min-height: 23px;
-    padding: 0.14rem 0.2rem;
-    font-size: 0.54rem;
-    line-height: 1.1;
+    min-height: 22px;
+    padding: 0.1rem 0.14rem;
+    font-size: 0.45rem;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
   }
 
   .topbar-actions button {
@@ -2773,7 +2775,7 @@ body.officer-page #loan-entry-panel {
   .records-panel td:nth-child(4),
   .records-panel td:nth-child(5),
   .records-panel td:nth-child(6) {
-    grid-column: 2;
+    grid-column: 1 / -1;
   }
 
   .records-panel td:nth-child(1),
@@ -2791,9 +2793,21 @@ body.officer-page #loan-entry-panel {
     grid-row: 3;
   }
 
+  .records-panel td:nth-child(4) {
+    grid-row: 4;
+  }
+
+  .records-panel td:nth-child(5) {
+    grid-row: 5;
+  }
+
+  .records-panel td:nth-child(6) {
+    grid-row: 6;
+  }
+
   .records-panel td:last-child .remarks-controls {
-    grid-template-columns: 1fr 1fr;
-    gap: 0.22rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.18rem;
   }
 
   .records-panel td:last-child .remarks-controls .save-paid-btn,
@@ -2801,9 +2815,11 @@ body.officer-page #loan-entry-panel {
   .records-panel td:last-child .remarks-controls .statement-btn,
   .records-panel td:last-child .remarks-controls .write-off-btn,
   .records-panel td:last-child .remarks-controls .hatag-hatag-btn {
-    min-height: 23px;
-    padding: 0.12rem 0.16rem;
-    font-size: 0.52rem;
+    min-height: 22px;
+    padding: 0.08rem 0.12rem;
+    font-size: 0.44rem;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
   }
 
   .records-panel td:nth-child(5) {
@@ -2903,13 +2919,18 @@ body.officer-page #loan-entry-panel {
     gap: 0.42rem !important;
   }
 
+  body.portfolio-page-body .portfolio-filter-panel,
+  body.portfolio-page-body .portfolio-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
   body.portfolio-page-body .portfolio-hero-grid {
     grid-template-columns: 1fr !important;
     gap: 0.42rem !important;
   }
 
   body.portfolio-page-body .portfolio-types-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     gap: 0.4rem !important;
   }
 
@@ -2919,9 +2940,28 @@ body.officer-page #loan-entry-panel {
     gap: 0.36rem !important;
   }
 
+  body.portfolio-page-body .portfolio-filter-head {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 0.4rem !important;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head h2 {
+    grid-column: 1 / -1;
+  }
+
+  body.portfolio-page-body .portfolio-summary-grid .portfolio-stat-card {
+    min-width: 0;
+  }
+
   body.portfolio-page-body .table-head .filter-control {
     width: 100%;
     min-width: 0 !important;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head button {
+    grid-column: 1 / -1;
   }
 
   body.portfolio-page-body .table-head button {
@@ -2939,6 +2979,11 @@ body.officer-page #loan-entry-panel {
   body.portfolio-page-body .portfolio-type-value {
     font-size: 0.92rem !important;
     line-height: 1.15;
+  }
+
+  body.portfolio-page-body .portfolio-type-card .portfolio-type-label {
+    line-height: 1.2;
+    word-break: break-word;
   }
 
   body.portfolio-page-body .portfolio-meta,
