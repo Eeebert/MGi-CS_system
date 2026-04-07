@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1280, initial-scale=0.25, minimum-scale=0.25" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Morris Gilbert Inso - Officer Dashboard</title>
     <meta name="theme-color" content="#0f141a" />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" href="images/loading_logo.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body class="officer-page">
     <div class="bg-shape shape-a" aria-hidden="true"></div>
     <div class="bg-shape shape-b" aria-hidden="true"></div>
 
@@ -23,8 +23,7 @@
         <p>Talisay, Santander, Cebu</p>
       </div>
       <div class="topbar-actions">
-        <button id="back-officers" class="btn-secondary" type="button">Back to Officers</button>
-        <button id="officer-logout" class="btn-danger" type="button">Log Out</button>
+        <button id="officer-dashboard-btn" class="btn-secondary" type="button">Dashboard</button>
         <button id="officer-hamburger" class="btn-hamburger" type="button" aria-label="Toggle content" aria-expanded="true">
           <span></span><span></span><span></span>
         </button>
@@ -94,16 +93,9 @@
             <table>
               <thead>
                 <tr>
-                  <th>Lastname, First Name, Middle Initial</th>
-                  <th>Address</th>
-                  <th>Contact Number</th>
-                  <th>Purpose of Loan</th>
-                  <th>Mode of Payment</th>
-                  <th>Type of Loan</th>
+                  <th>Borrower</th>
+                  <th>Loan Info</th>
                   <th>Amount</th>
-                  <th>Date Granted</th>
-                  <th>Due Date</th>
-                  <th>Interest Rate / Per Period</th>
                   <th>Outstanding Balance</th>
                   <th>Paid Amount</th>
                   <th>Remarks</th>
@@ -111,7 +103,7 @@
               </thead>
               <tbody id="records-body">
                 <tr>
-                  <td colspan="13" class="empty">No records yet.</td>
+                  <td colspan="6" class="empty">No records yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -133,7 +125,13 @@
             </label>
             <label>
               <span>Address</span>
-              <input type="text" id="address" name="address" placeholder="" required />
+              <div class="address-autocomplete" data-address-autocomplete>
+                <input type="text" id="address" name="address" placeholder="" autocomplete="off" required />
+                <div class="address-suggestions-panel" role="listbox" aria-label="Saved addresses">
+                  <div class="address-suggestions-list"></div>
+                  <div class="address-suggestions-empty">Saved addresses will appear here after you save one.</div>
+                </div>
+              </div>
             </label>
             <label>
               <span>Contact</span>
@@ -141,7 +139,7 @@
             </label>
             <label>
               <span>Purpose of Loan</span>
-              <select id="purposeOfLoan" name="purposeOfLoan" required>
+              <select id="purposeOfLoan" name="purposeOfLoan" class="purpose-of-loan-select" required>
                 <option value="">Select type</option>
                 <option value="Education">Education</option>
                 <option value="Medication">Medication</option>
@@ -156,7 +154,7 @@
             </label>
             <label>
               <span>Mode of Payment</span>
-              <select id="modeOfPayment" name="modeOfPayment" required>
+              <select id="modeOfPayment" name="modeOfPayment" class="purpose-of-loan-select" required>
                 <option value="">Select mode</option>
                 <option value="Daily">Daily</option>
                 <option value="Weekly">Weekly</option>
@@ -164,7 +162,7 @@
             </label>
             <label>
               <span>Type of Loan</span>
-              <select id="payableWithin" name="payableWithin" required>
+              <select id="payableWithin" name="payableWithin" class="purpose-of-loan-select" required>
                 <option value="">Select type</option>
                 <option value="emergency_fixed">Emergency Loan - Fixed</option>
                 <option value="monthly_60_fixed">Monthly (60 days) - Fixed</option>
@@ -275,11 +273,27 @@
           <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
         </div>
       </div>
+      <div class="side-drawer-officers">
+        <span class="side-drawer-title" style="padding: 8px 16px 0;">Account Officers</span>
+        <div class="side-drawer-officers-list">
+          <a href="officer-dashboard.html?officer=JunJun" class="officer-link">JunJun</a>
+          <a href="officer-dashboard.html?officer=Aga" class="officer-link">Aga</a>
+          <a href="officer-dashboard.html?officer=Jomar" class="officer-link">Jomar</a>
+          <a href="officer-dashboard.html?officer=James" class="officer-link">James</a>
+          <a href="officer-dashboard.html?officer=Jambi" class="officer-link">Jambi</a>
+          <a href="officer-dashboard.html?officer=Maria%20Joy" class="officer-link">Maria Joy</a>
+        </div>
+      </div>
       <div class="side-drawer-footer">
+        <button id="backup-data" class="btn-secondary" type="button" style="width:100%;">Download Backup Data (.json)</button>
+        <button id="restore-backup" class="btn-secondary" type="button" style="width:100%; margin-top:8px;">Restore Backup (.json)</button>
+        <input id="restore-backup-input" type="file" accept="application/json,.json" style="display:none;" />
+        <p id="backup-status-note" class="side-drawer-note is-loading" role="status" aria-live="polite">Backup status: checking...</p>
         <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
       </div>
     </aside>
 
+    <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>
     <script src="officer-dashboard.js?v=20260406c"></script>
   </body>

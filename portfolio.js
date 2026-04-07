@@ -43,6 +43,25 @@ const portfolioLogoutBtn = document.getElementById("portfolio-logout");
 const dailyPrincipalCollected = document.getElementById("daily-principal-collected");
 const dailyInterestCollected = document.getElementById("daily-interest-collected");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+let recordsCache = [];
+let didLoadServerRecords = false;
+
+function getLocalMainRecords() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw === null) {
+      return { hasValue: false, records: [] };
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      hasValue: true,
+      records: Array.isArray(parsed) ? parsed : [],
+    };
+  } catch {
+    return { hasValue: false, records: [] };
+  }
+}
 
 function getStateApiCandidates(stateKey, includeCacheBuster) {
   const query = includeCacheBuster ? "?t=" + Date.now() : "";
@@ -85,11 +104,46 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
 }
 
 function getRecords() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
+  if (didLoadServerRecords) {
+    return Array.isArray(recordsCache) ? recordsCache : [];
   }
+
+  return getLocalMainRecords().records;
+}
+
+async function loadRecordsFromServer() {
+  const localState = getLocalMainRecords();
+  if (localState.hasValue) {
+    recordsCache = localState.records;
+    didLoadServerRecords = true;
+    return;
+  }
+
+  try {
+    const res = await fetchStateApi(
+      STORAGE_KEY,
+      {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      },
+      true
+    );
+
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (Array.isArray(data?.payload)) {
+        recordsCache = data.payload;
+        didLoadServerRecords = true;
+        return;
+      }
+    }
+  } catch {
+    // Fall back to localStorage-backed records when server state is unavailable.
+  }
+
+  recordsCache = getRecords();
+  didLoadServerRecords = true;
 }
 
 function formatCurrency(value) {
@@ -711,11 +765,33 @@ if (sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
   window.location.href = "index.html";
 } else {
   initializeTheme();
-  renderPortfolio();
+  if (portfolioDateFilterInput) {
+    portfolioDateFilterInput.value = "";
+  }
+  if (portfolioMonthFilterInput) {
+    portfolioMonthFilterInput.value = "";
+  }
+  loadRecordsFromServer().then(() => renderPortfolio());
 }
 
 window.addEventListener("storage", (event) => {
   if (event.key === STORAGE_KEY) {
+    recordsCache = getLocalMainRecords().records;
+    didLoadServerRecords = true;
     renderPortfolio();
+  }
+});
+
+setInterval(() => {
+  loadRecordsFromServer().then(() => renderPortfolio());
+}, 30000);
+
+window.addEventListener("focus", () => {
+  loadRecordsFromServer().then(() => renderPortfolio());
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    loadRecordsFromServer().then(() => renderPortfolio());
   }
 });

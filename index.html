@@ -56,7 +56,6 @@
       </div>
       <div class="topbar-actions">
         <button id="toggle-loan-entry" class="btn-secondary" type="button" aria-expanded="false">Loan Application</button>
-        <button id="toggle-runner" class="btn-secondary" type="button">Account Officer</button>
         <button id="main-hamburger" class="btn-hamburger" type="button" aria-label="Toggle content" aria-expanded="true">
           <span></span><span></span><span></span>
         </button>
@@ -85,7 +84,13 @@
 
             <label>
               <span>Address</span>
-              <input type="text" id="address" name="address" placeholder="Enter address" required />
+              <div class="address-autocomplete" data-address-autocomplete>
+                <input type="text" id="address" name="address" placeholder="Enter address" autocomplete="off" required />
+                <div class="address-suggestions-panel" role="listbox" aria-label="Saved addresses">
+                  <div class="address-suggestions-list"></div>
+                  <div class="address-suggestions-empty">Saved addresses will appear here after you save one.</div>
+                </div>
+              </div>
             </label>
 
             <label>
@@ -100,7 +105,13 @@
 
             <label id="coMakerAddressWrap">
               <span>Co-maker Address</span>
-              <input type="text" id="coMakerAddress" name="coMakerAddress" placeholder="Enter co-maker address" />
+              <div class="address-autocomplete" data-address-autocomplete>
+                <input type="text" id="coMakerAddress" name="coMakerAddress" placeholder="Enter co-maker address" autocomplete="off" />
+                <div class="address-suggestions-panel" role="listbox" aria-label="Saved addresses">
+                  <div class="address-suggestions-list"></div>
+                  <div class="address-suggestions-empty">Saved addresses will appear here after you save one.</div>
+                </div>
+              </div>
             </label>
 
             <label>
@@ -109,8 +120,22 @@
             </label>
 
             <label>
+              <span>Type of Loan</span>
+              <select id="payableWithin" name="payableWithin" class="purpose-of-loan-select" required>
+                <option value="">Select type</option>
+                <option value="monthly_open">Monthly - Open</option>
+                <option value="bi_monthly_open">Bi - Monthly</option>
+                <option value="cash_advance_fixed_15">Cash Advance (15 days)</option>
+                <option value="monthly_60_fixed">Monthly (60 days) - Fixed</option>
+                <option value="monthly_100_fixed">Monthly (14 weeks)</option>
+                <option value="emergency_fixed">Emergency Loan - Fixed</option>
+                <option value="no_listed">Not Listed</option>
+              </select>
+            </label>
+
+            <label>
               <span>Purpose of Loan</span>
-              <select id="purposeOfLoan" name="purposeOfLoan" required>
+              <select id="purposeOfLoan" name="purposeOfLoan" class="purpose-of-loan-select" required>
                 <option value="">Select type</option>
                 <option value="Education">Education</option>
                 <option value="Medication">Medication</option>
@@ -121,6 +146,17 @@
                 <option value="Farming">Farming</option>
                 <option value="Personal">Personal</option>
                 <option value="Others">Others</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Mode of Payment</span>
+              <select id="modeOfPayment" name="modeOfPayment" class="purpose-of-loan-select" required>
+                <option value="">Select type</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Daily">Daily</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Bi-Monthly">Bi-Monthly</option>
               </select>
             </label>
 
@@ -143,31 +179,6 @@
             <label>
               <span>Date Granted</span>
               <input type="date" id="dateGranted" name="dateGranted" placeholder="dd/mm/yyyy" required />
-            </label>
-
-            <label>
-              <span>Mode of Payment</span>
-              <select id="modeOfPayment" name="modeOfPayment" required>
-                <option value="">Select type</option>
-                <option value="Weekly">Weekly</option>
-                <option value="Daily">Daily</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Bi-Monthly">Bi-Monthly</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Type of Loan</span>
-              <select id="payableWithin" name="payableWithin" required>
-                <option value="">Select type</option>
-                <option value="monthly_open">Monthly - Open</option>
-                <option value="bi_monthly_open">Bi - Monthly</option>
-                <option value="cash_advance_fixed_15">Cash Advance (15 days)</option>
-                <option value="monthly_60_fixed">Monthly (60 days) - Fixed</option>
-                <option value="monthly_100_fixed">Monthly (14 weeks)</option>
-                <option value="emergency_fixed">Emergency Loan - Fixed</option>
-                <option value="no_listed">Not Listed</option>
-              </select>
             </label>
 
             <label>
@@ -254,27 +265,17 @@
           <table>
             <thead>
               <tr>
-                <th>Lastname, First Name, Middle Initial</th>
-                <th>Address</th>
-                <th>Contact Number</th>
-                <th>Purpose of Loan</th>
-                <th>Mode of Payment</th>
-                <th>Type of Loan</th>
+                <th>Borrower</th>
+                <th>Loan Info</th>
                 <th>Amount</th>
-                <th>Date Granted</th>
-                <th>Due Date</th>
-                <th>Interest Rate / Per Period</th>
                 <th>Pay Date</th>
-                <th>Arrears</th>
-                <th>Other Arrears</th>
                 <th>Outstanding Balance</th>
-                <th>Paid Amount</th>
-                <th>Remarks</th>
+                <th>ACTIONS</th>
               </tr>
             </thead>
             <tbody id="records-body">
               <tr>
-                <td colspan="16" class="empty">No records yet.</td>
+                <td colspan="6" class="empty">No records yet.</td>
               </tr>
             </tbody>
           </table>
@@ -380,6 +381,17 @@
           <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
         </div>
       </div>
+      <div class="side-drawer-officers">
+        <span class="side-drawer-title" style="padding: 8px 16px 0;">Account Officers</span>
+        <div class="side-drawer-officers-list">
+          <a href="officer-dashboard.html?officer=JunJun" class="officer-link">JunJun</a>
+          <a href="officer-dashboard.html?officer=Aga" class="officer-link">Aga</a>
+          <a href="officer-dashboard.html?officer=Jomar" class="officer-link">Jomar</a>
+          <a href="officer-dashboard.html?officer=James" class="officer-link">James</a>
+          <a href="officer-dashboard.html?officer=Jambi" class="officer-link">Jambi</a>
+          <a href="officer-dashboard.html?officer=Maria%20Joy" class="officer-link">Maria Joy</a>
+        </div>
+      </div>
       <div class="side-drawer-footer">
         <button id="backup-data" class="btn-secondary" type="button" style="width:100%;">Download Backup Data (.json)</button>
         <button id="restore-backup" class="btn-secondary" type="button" style="width:100%; margin-top:8px;">Restore Backup (.json)</button>
@@ -389,6 +401,7 @@
       </div>
     </aside>
 
+    <script src="client-security.js"></script>
     <script src="app.js?v=20260406c"></script>
     <script src="pwa-init.js"></script>
   </body>

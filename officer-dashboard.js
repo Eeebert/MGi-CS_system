@@ -51,19 +51,379 @@ const paymentEntryError = document.getElementById("payment-entry-error");
 const paymentEntryCancelBtn = document.getElementById("payment-entry-cancel");
 const paymentEntryConfirmBtn = document.getElementById("payment-entry-confirm");
 const pageTitle = document.getElementById("page-title");
-const backOfficersBtn = document.getElementById("back-officers");
-const officerLogoutBtn = document.getElementById("officer-logout");
+const officerDashboardBtn = document.getElementById("officer-dashboard-btn");
 const toggleLoanEntryBtn = document.getElementById("toggle-loan-entry");
 const loanEntryPanel = document.getElementById("loan-entry-panel");
+const officerMain = document.getElementById("officer-main");
 const hamburgerBtn = document.getElementById("officer-hamburger");
 const sideDrawer = document.getElementById("side-drawer");
 const drawerOverlay = document.getElementById("drawer-overlay");
 const drawerCloseBtn = document.getElementById("drawer-close");
 const drawerLogoutBtn = document.getElementById("drawer-logout");
+const backupDataBtn = document.getElementById("backup-data");
+const restoreBackupBtn = document.getElementById("restore-backup");
+const restoreBackupInput = document.getElementById("restore-backup-input");
+const backupStatusNote = document.getElementById("backup-status-note");
 const themeOptions = document.querySelectorAll('input[name="theme-choice"]');
 const dashboardTotalLoans = document.getElementById("dashboard-total-loans");
 const dashboardTotalAmount = document.getElementById("dashboard-total-amount");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+const ADDRESS_SUGGESTIONS_KEY = "mgi_saved_addresses";
+const MAX_ADDRESS_SUGGESTIONS = 20;
+const MAX_VISIBLE_ADDRESS_SUGGESTIONS = 6;
+const addressAutocompleteFields = Array.from(document.querySelectorAll("[data-address-autocomplete]"));
+const purposeLoanSelects = Array.from(document.querySelectorAll(".purpose-of-loan-select"));
+
+function initPurposeLoanSelects() {
+  purposeLoanSelects.forEach((select) => {
+    if (!(select instanceof HTMLSelectElement) || select.dataset.enhanced === "true") {
+      return;
+    }
+
+    select.dataset.enhanced = "true";
+    select.classList.add("purpose-select-native");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "purpose-select-wrap";
+    select.parentNode?.insertBefore(wrapper, select);
+    wrapper.appendChild(select);
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "purpose-select-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const menu = document.createElement("div");
+    menu.className = "purpose-select-menu";
+    menu.setAttribute("role", "listbox");
+
+    wrapper.append(trigger, menu);
+
+    function closeMenu() {
+      wrapper.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    function openMenu() {
+      wrapper.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+
+    function buildMenu() {
+      menu.innerHTML = "";
+
+      Array.from(select.options).forEach((option) => {
+        const optionButton = document.createElement("button");
+        optionButton.type = "button";
+        optionButton.className = "purpose-select-option";
+        optionButton.textContent = option.textContent || "";
+
+        if (!option.value) {
+          optionButton.classList.add("is-placeholder");
+          optionButton.disabled = true;
+        } else {
+          optionButton.dataset.value = option.value;
+        }
+
+        if (option.value === select.value) {
+          optionButton.classList.add("is-selected");
+        }
+
+        menu.appendChild(optionButton);
+      });
+    }
+
+    function syncFromSelect() {
+      const selectedOption = select.options[select.selectedIndex];
+      trigger.textContent = selectedOption?.textContent?.trim() || "Select type";
+      trigger.classList.toggle("is-placeholder", !select.value);
+
+      menu.querySelectorAll(".purpose-select-option").forEach((node) => {
+        node.classList.toggle("is-selected", node instanceof HTMLElement && node.dataset.value === select.value);
+      });
+    }
+
+    trigger.addEventListener("click", () => {
+      if (wrapper.classList.contains("is-open")) {
+        closeMenu();
+        return;
+      }
+      openMenu();
+    });
+
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMenu();
+      }
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    });
+
+    menu.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest(".purpose-select-option") : null;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const value = target.dataset.value || "";
+      if (!value) {
+        return;
+      }
+
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      syncFromSelect();
+      closeMenu();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Node) || !wrapper.contains(event.target)) {
+        closeMenu();
+      }
+    });
+
+    select.addEventListener("change", syncFromSelect);
+    select.form?.addEventListener("reset", () => {
+      setTimeout(syncFromSelect, 0);
+    });
+
+    buildMenu();
+    syncFromSelect();
+  });
+}
+
+function normalizeAddressSuggestion(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function getSavedAddressSuggestions() {
+  try {
+    const raw = localStorage.getItem(ADDRESS_SUGGESTIONS_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const seen = new Set();
+    return parsed
+      .map(normalizeAddressSuggestion)
+      .filter((value) => {
+        if (!value || seen.has(value)) {
+          return false;
+        }
+        seen.add(value);
+        return true;
+      })
+      .slice(0, MAX_ADDRESS_SUGGESTIONS);
+  } catch {
+    return [];
+  }
+}
+
+function setSavedAddressSuggestions(values) {
+  try {
+    localStorage.setItem(ADDRESS_SUGGESTIONS_KEY, JSON.stringify(values));
+  } catch {
+    return;
+  }
+
+  renderAddressSuggestions();
+}
+
+function removeAddressSuggestion(valueToRemove) {
+  const normalizedValue = normalizeAddressSuggestion(valueToRemove);
+  const nextSuggestions = getSavedAddressSuggestions().filter((value) => value !== normalizedValue);
+  setSavedAddressSuggestions(nextSuggestions);
+}
+
+function buildAddressSuggestionOption(value, isActive) {
+  return `
+    <div class="address-suggestion-option${isActive ? " is-active" : ""}">
+      <button type="button" class="address-suggestion-fill" data-address-value="${sanitize(value)}">
+        <span class="address-suggestion-text">${sanitize(value)}</span>
+      </button>
+      <button type="button" class="address-suggestion-remove" data-remove-address="${sanitize(value)}" aria-label="Remove saved address" title="Remove saved address">
+        <span class="address-suggestion-remove-icon" aria-hidden="true">-</span>
+      </button>
+    </div>
+  `;
+}
+
+function createAddressAutocompleteController(field) {
+  const input = field.querySelector("input");
+  const panel = field.querySelector(".address-suggestions-panel");
+  const list = field.querySelector(".address-suggestions-list");
+  const empty = field.querySelector(".address-suggestions-empty");
+
+  if (!input || !panel || !list || !empty) {
+    return null;
+  }
+
+  let activeIndex = -1;
+
+  function getFilteredSuggestions() {
+    const query = normalizeAddressSuggestion(input.value);
+    const allSuggestions = getSavedAddressSuggestions();
+
+    if (!query) {
+      return allSuggestions.slice(0, MAX_VISIBLE_ADDRESS_SUGGESTIONS);
+    }
+
+    return allSuggestions
+      .filter((value) => value.includes(query))
+      .slice(0, MAX_VISIBLE_ADDRESS_SUGGESTIONS);
+  }
+
+  function render() {
+    const suggestions = getFilteredSuggestions();
+    const hasSavedAddresses = getSavedAddressSuggestions().length > 0;
+    const hasSuggestions = suggestions.length > 0;
+
+    if (activeIndex >= suggestions.length) {
+      activeIndex = hasSuggestions ? 0 : -1;
+    }
+
+    list.innerHTML = suggestions
+      .map((value, index) => buildAddressSuggestionOption(value, index === activeIndex))
+      .join("");
+
+    field.classList.toggle("is-empty", !hasSuggestions);
+    empty.textContent = hasSavedAddresses
+      ? "No saved address matches what you typed yet."
+      : "Saved addresses will appear here after you save one.";
+
+    return hasSuggestions;
+  }
+
+  function open() {
+    field.classList.add("is-open");
+    input.setAttribute("aria-expanded", "true");
+    render();
+  }
+
+  function close() {
+    activeIndex = -1;
+    field.classList.remove("is-open");
+    input.setAttribute("aria-expanded", "false");
+  }
+
+  function applyValue(value) {
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    close();
+  }
+
+  input.setAttribute("aria-haspopup", "listbox");
+  input.setAttribute("aria-expanded", "false");
+
+  input.addEventListener("focus", () => {
+    open();
+  });
+
+  input.addEventListener("input", () => {
+    open();
+  });
+
+  input.addEventListener("keydown", (event) => {
+    const suggestions = getFilteredSuggestions();
+    if (!suggestions.length) {
+      if (event.key === "Escape") {
+        close();
+      }
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      activeIndex = (activeIndex + 1 + suggestions.length) % suggestions.length;
+      render();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      activeIndex = activeIndex <= 0 ? suggestions.length - 1 : activeIndex - 1;
+      render();
+      return;
+    }
+
+    if (event.key === "Enter" && field.classList.contains("is-open") && activeIndex >= 0) {
+      event.preventDefault();
+      applyValue(suggestions[activeIndex]);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      close();
+    }
+  });
+
+  panel.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+
+  panel.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-address]");
+    if (removeButton) {
+      removeAddressSuggestion(removeButton.getAttribute("data-remove-address") || "");
+      render();
+      return;
+    }
+
+    const option = event.target.closest("[data-address-value]");
+    if (!option) {
+      return;
+    }
+
+    applyValue(option.getAttribute("data-address-value") || "");
+  });
+
+  return {
+    field,
+    render,
+    close,
+  };
+}
+
+const addressAutocompleteControllers = addressAutocompleteFields
+  .map(createAddressAutocompleteController)
+  .filter(Boolean);
+
+function renderAddressSuggestions() {
+  addressAutocompleteControllers.forEach((controller) => {
+    controller.render();
+  });
+}
+
+function saveAddressSuggestions(...values) {
+  const nextSuggestions = [...values.map(normalizeAddressSuggestion), ...getSavedAddressSuggestions()]
+    .filter((value, index, array) => value && array.indexOf(value) === index)
+    .slice(0, MAX_ADDRESS_SUGGESTIONS);
+
+  setSavedAddressSuggestions(nextSuggestions);
+}
+
+document.addEventListener("click", (event) => {
+  addressAutocompleteControllers.forEach((controller) => {
+    if (!(event.target instanceof Node) || !controller.field.contains(event.target)) {
+      controller.close();
+    }
+  });
+});
 
 function getStateApiCandidates(stateKey, includeCacheBuster) {
   const query = includeCacheBuster ? "?t=" + Date.now() : "";
@@ -173,8 +533,17 @@ function getRecords() {
   return Array.isArray(recordsCache) ? recordsCache : [];
 }
 
+function mirrorOfficerRecordsToLocalStorage(records) {
+  try {
+    localStorage.setItem(getOfficerStorageKey(), JSON.stringify(Array.isArray(records) ? records : []));
+  } catch {
+    // Ignore localStorage quota/availability errors.
+  }
+}
+
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
+  mirrorOfficerRecordsToLocalStorage(recordsCache);
   lastLocalMutationAt = Date.now();
   hasUnsyncedLocalChanges = true;
   syncRecordsToServer(records);
@@ -292,6 +661,7 @@ async function loadRecordsFromServer() {
         return;
       }
       recordsCache = data.payload;
+      mirrorOfficerRecordsToLocalStorage(recordsCache);
       console.info("[sync][officer] Fetch success", { officer: currentOfficer, records: data.payload.length });
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
       return;
@@ -299,6 +669,7 @@ async function loadRecordsFromServer() {
 
     if (data.payload === null) {
       recordsCache = [];
+      mirrorOfficerRecordsToLocalStorage(recordsCache);
       console.info("[sync][officer] Server has no payload yet", { officer: currentOfficer });
       setSyncStatus("ok", "updated (0 records)");
       return;
@@ -538,6 +909,11 @@ function computeBaseTotalPayable(record) {
 }
 
 function computeCollectibleAmount(record) {
+  const override = Number(record?.collectibleAmountOverride);
+  if (Number.isFinite(override) && override > 0) {
+    return override;
+  }
+
   if (isWeeklyFixedLoan(record.payableWithin)) {
     return getWeeklyRunningState(record, getReferenceDate()).outstandingBalance;
   }
@@ -548,6 +924,11 @@ function computeCollectibleAmount(record) {
 }
 
 function getCollectibleLabelForRecord(record) {
+  const overridePeriod = String(record?.collectiblePeriodOverride || "").trim();
+  if (overridePeriod) {
+    return `${overridePeriod.toLowerCase()} collectible`;
+  }
+
   if (isWeeklyFixedLoan(record.payableWithin)) {
     return "weekly collectible";
   }
@@ -682,6 +1063,10 @@ function setLoanFormVisibility(isVisible) {
     loanEntryPanel.style.display = isLoanFormVisible ? "block" : "none";
   }
 
+  if (officerMain) {
+    officerMain.classList.toggle("loan-form-hidden", !isLoanFormVisible);
+  }
+
   if (toggleLoanEntryBtn) {
     toggleLoanEntryBtn.textContent = isLoanFormVisible ? "Hide Loan Application" : "Show Loan Application";
     toggleLoanEntryBtn.setAttribute("aria-expanded", isLoanFormVisible ? "true" : "false");
@@ -698,7 +1083,7 @@ function renderRecords() {
   });
 
   if (filtered.length === 0) {
-    body.innerHTML = '<tr><td colspan="13" class="empty">No records yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty">No records yet.</td></tr>';
     updateDashboardStats();
     return;
   }
@@ -717,22 +1102,34 @@ function renderRecords() {
       const hatagHatagDate = String(record.hatagHatagDate || "").trim();
       return `
         <tr>
-          <td>${sanitize(String(record.name || ""))}</td>
-          <td>${sanitize(String(record.address || "-"))}</td>
-          <td>${sanitize(String(record.contactNumber || "-"))}</td>
-          <td>${sanitize(String(record.purposeOfLoan || "-"))}</td>
-          <td>${sanitize(String(record.modeOfPayment || "-"))}</td>
-          <td>${sanitize(getTypeLabel(record.payableWithin))}</td>
-          <td>${formatCurrency(record.amount)}</td>
-          <td>${formatLongDate(record.dateGranted)}</td>
           <td>
-            <small class="mini-note">${formatLongDate(dueDate)}</small>
-            <div class="paid-controls">
-              <input type="date" class="due-date-input" data-index="${index}" value="${sanitize(dueDate)}" />
-              <button type="button" class="btn-secondary save-due-date-btn" data-index="${index}">Save Due Date</button>
+            <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
+            <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
+            <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+          </td>
+          <td>
+            <div class="loan-info-purpose"><b>Purpose of Loan:</b> ${sanitize(String(record.purposeOfLoan || "-"))}</div>
+            <div class="loan-info-mode"><b>Mode of Payment:</b> ${sanitize(String(record.modeOfPayment || "-"))}</div>
+            <div class="loan-info-type"><b>Type of Loan:</b> ${sanitize(getTypeLabel(record.payableWithin))}</div>
+          </td>
+          <td>
+            <div class="amount-info-rate">Interest rate: <span class="amount-info-rate-value">${effectiveInterestRate.toFixed(2)}%</span></div>
+            <div class="amount-info-line"><b>Grant Amount:</b> ${formatCurrency(record.amount)}</div>
+            <div class="amount-info-line"><b>Date Granted:</b> ${formatLongDate(record.dateGranted)}</div>
+            <button type="button" class="btn-secondary due-date-display-btn" data-index="${index}">Due Date: ${formatLongDate(dueDate)}</button>
+            <input type="date" class="due-date-input due-date-input-hidden" data-index="${index}" value="${sanitize(dueDate)}" />
+            <button type="button" class="btn-secondary collectible-display-btn" data-index="${index}">${formatCurrency(collectibleAmount)}/${getCollectibleLabelForRecord(record)}</button>
+            <div class="paid-controls collectible-editor collectible-editor-hidden" data-index="${index}">
+              <input type="text" class="collectible-edit-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(collectibleAmount))}" inputmode="decimal" autocomplete="off" />
+              <select class="collectible-period-select" data-index="${index}">
+                <option value="Daily" ${record.collectiblePeriodOverride === "Daily" ? "selected" : ""}>Daily</option>
+                <option value="Weekly" ${record.collectiblePeriodOverride === "Weekly" ? "selected" : ""}>Weekly</option>
+                <option value="Bi-Monthly" ${record.collectiblePeriodOverride === "Bi-Monthly" ? "selected" : ""}>Bi-Monthly</option>
+                <option value="Monthly" ${record.collectiblePeriodOverride === "Monthly" ? "selected" : ""}>Monthly</option>
+              </select>
+              <button type="button" class="btn-secondary save-collectible-btn" data-index="${index}">Save</button>
             </div>
           </td>
-          <td>${effectiveInterestRate.toFixed(2)}%<small class="per-period">${formatCurrency(collectibleAmount)}/${getCollectibleLabelForRecord(record)}</small></td>
           <td>${formatCurrency(outstandingBalance)}</td>
           <td>
             <div class="paid-controls">
@@ -797,6 +1194,21 @@ function formatUpperDate(isoDate) {
 function formatPlainAmount(value) {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function toggleCollectibleEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  const editor = body?.querySelector(`.collectible-editor[data-index="${rowIndex}"]`);
+  if (!(editor instanceof HTMLElement)) {
+    return;
+  }
+
+  const currentlyOpen = !editor.classList.contains("collectible-editor-hidden");
+  const shouldOpen = forceOpen ? true : !currentlyOpen;
+  editor.classList.toggle("collectible-editor-hidden", !shouldOpen);
 }
 
 function closePaymentHistoryModal() {
@@ -991,12 +1403,8 @@ async function exportVisibleRecordsToWord() {
 
   const headerRow = `
     <tr>
-      <th>Name</th>
-      <th>Address</th>
-      <th>Contact Number</th>
-      <th>Purpose of Loan</th>
-      <th>Mode of Payment</th>
-      <th>Type of Loan</th>
+      <th>Borrower</th>
+      <th>Loan Info</th>
       <th>Amount</th>
       <th>Date Granted</th>
       <th>Due Date</th>
@@ -1015,12 +1423,16 @@ async function exportVisibleRecordsToWord() {
       const effectiveInterestRate = getEffectiveInterestRate(record);
       return `
         <tr>
-          <td>${sanitize(String(record.name || ""))}</td>
-          <td>${sanitize(String(record.address || "-"))}</td>
-          <td>${sanitize(String(record.contactNumber || "-"))}</td>
-          <td>${sanitize(String(record.purposeOfLoan || "-"))}</td>
-          <td>${sanitize(String(record.modeOfPayment || "-"))}</td>
-          <td>${sanitize(getTypeLabel(record.payableWithin))}</td>
+          <td>
+            <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
+            <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
+            <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+          </td>
+          <td>
+            <div class="loan-info-purpose"><b>Purpose of Loan:</b> ${sanitize(String(record.purposeOfLoan || "-"))}</div>
+            <div class="loan-info-mode"><b>Mode of Payment:</b> ${sanitize(String(record.modeOfPayment || "-"))}</div>
+            <div class="loan-info-type"><b>Type of Loan:</b> ${sanitize(getTypeLabel(record.payableWithin))}</div>
+          </td>
           <td>${formatCurrency(record.amount)}</td>
           <td>${sanitize(formatLongDate(record.dateGranted))}</td>
           <td>${sanitize(formatLongDate(dueDate))}</td>
@@ -1288,11 +1700,26 @@ function requestWriteOffPassword() {
 }
 
 function getTypeLabel(payableWithin) {
+  if (payableWithin === "monthly_open" || payableWithin === "Monthly") {
+    return "Monthly - Open";
+  }
+  if (payableWithin === "bi_monthly_open") {
+    return "Bi - Monthly";
+  }
+  if (payableWithin === "cash_advance_fixed_15") {
+    return "Cash Advance (15 days)";
+  }
   if (payableWithin === "emergency_fixed") {
     return "Emergency Loan - Fixed";
   }
   if (payableWithin === "monthly_60_fixed") {
     return "Monthly (60 days) - Fixed";
+  }
+  if (payableWithin === "monthly_100_fixed") {
+    return "Monthly (14 weeks)";
+  }
+  if (payableWithin === "no_listed") {
+    return "Not Listed";
   }
   return payableWithin || "";
 }
@@ -1303,17 +1730,25 @@ function syncModeOfPaymentWithLoanType() {
     return;
   }
 
+  const applyModeValue = (nextValue) => {
+    const changed = modeOfPaymentSelect.value !== nextValue;
+    modeOfPaymentSelect.value = nextValue;
+    if (changed) {
+      modeOfPaymentSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+
   if (loanType === "emergency_fixed") {
-    modeOfPaymentSelect.value = "Weekly";
+    applyModeValue("Weekly");
     return;
   }
 
   if (loanType === "monthly_60_fixed") {
-    modeOfPaymentSelect.value = "Daily";
+    applyModeValue("Daily");
     return;
   }
 
-  modeOfPaymentSelect.value = "";
+  applyModeValue("");
 }
 
 form?.addEventListener("submit", (e) => {
@@ -1352,6 +1787,7 @@ form?.addEventListener("submit", (e) => {
 
   records.push(newRecord);
   setRecords(records);
+  saveAddressSuggestions(newRecord.address);
   showMessage("Loan record saved successfully.", "success");
   form.reset();
   renderRecords();
@@ -1393,6 +1829,9 @@ useTodayBtn?.addEventListener("click", () => {
 });
 
 exportWordOfficerBtn?.addEventListener("click", exportVisibleRecordsToWord);
+
+initPurposeLoanSelects();
+renderAddressSuggestions();
 
 paymentHistoryCloseBtn?.addEventListener("click", closePaymentHistoryModal);
 paymentHistoryModal?.addEventListener("click", (event) => {
@@ -1466,19 +1905,64 @@ clearBtn?.addEventListener("click", () => {
   }
 });
 
+body?.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || !target.classList.contains("due-date-input")) {
+    return;
+  }
+
+  const rowIndex = Number(target.dataset.index);
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    showMessage("Unable to update due date.", "error");
+    return;
+  }
+
+  const nextDueDate = String(target.value || "").trim();
+  if (!nextDueDate) {
+    showMessage("Please choose a valid due date.", "error");
+    return;
+  }
+
+  const records = getRecords();
+  if (!records[rowIndex]) {
+    showMessage("Record not found.", "error");
+    return;
+  }
+
+  records[rowIndex].dueDate = nextDueDate;
+  setRecords(records);
+  renderRecords();
+  showMessage("Due date updated.", "success");
+});
+
 body?.addEventListener("click", async (event) => {
-  const saveDueDateBtn = event.target.closest(".save-due-date-btn");
-  if (saveDueDateBtn) {
-    const rowIndex = Number(saveDueDateBtn.dataset.index);
+  const collectibleDisplayBtn = event.target.closest(".collectible-display-btn");
+  if (collectibleDisplayBtn) {
+    const rowIndex = Number(collectibleDisplayBtn.dataset.index);
     if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Unable to update due date.", "error");
+      showMessage("Unable to update collectible.", "error");
       return;
     }
 
-    const dueDateInputEl = body.querySelector(`.due-date-input[data-index="${rowIndex}"]`);
-    const nextDueDate = String(dueDateInputEl?.value || "").trim();
-    if (!nextDueDate) {
-      showMessage("Please choose a valid due date.", "error");
+    toggleCollectibleEditor(rowIndex);
+    return;
+  }
+
+  const saveCollectibleBtn = event.target.closest(".save-collectible-btn");
+  if (saveCollectibleBtn) {
+    const rowIndex = Number(saveCollectibleBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to update collectible.", "error");
+      return;
+    }
+
+    const collectibleInputEl = body?.querySelector(`.collectible-edit-input[data-index="${rowIndex}"]`);
+    const periodSelectEl = body?.querySelector(`.collectible-period-select[data-index="${rowIndex}"]`);
+    const updatedCollectible = parseAmountInput(collectibleInputEl instanceof HTMLInputElement ? collectibleInputEl.value : "0");
+    const selectedPeriod = periodSelectEl instanceof HTMLSelectElement ? periodSelectEl.value : "Daily";
+
+    if (!Number.isFinite(updatedCollectible) || updatedCollectible <= 0) {
+      showMessage("Collectible amount must be greater than 0.", "error");
       return;
     }
 
@@ -1488,10 +1972,34 @@ body?.addEventListener("click", async (event) => {
       return;
     }
 
-    records[rowIndex].dueDate = nextDueDate;
+    records[rowIndex].collectibleAmountOverride = updatedCollectible;
+    records[rowIndex].collectiblePeriodOverride = selectedPeriod;
     setRecords(records);
     renderRecords();
-    showMessage("Due date updated.", "success");
+    showMessage("Collectible updated.", "success");
+    toggleCollectibleEditor(rowIndex, false);
+    return;
+  }
+
+  const dueDateDisplayBtn = event.target.closest(".due-date-display-btn");
+  if (dueDateDisplayBtn) {
+    const rowIndex = Number(dueDateDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to update due date.", "error");
+      return;
+    }
+
+    const dueDateInputEl = body.querySelector(`.due-date-input[data-index="${rowIndex}"]`);
+    if (!(dueDateInputEl instanceof HTMLInputElement)) {
+      showMessage("Unable to open due date picker.", "error");
+      return;
+    }
+
+    if (typeof dueDateInputEl.showPicker === "function") {
+      dueDateInputEl.showPicker();
+    } else {
+      dueDateInputEl.click();
+    }
     return;
   }
 
@@ -1708,8 +2216,111 @@ toggleLoanEntryBtn?.addEventListener("click", () => {
   setLoanFormVisibility(!isLoanFormVisible);
 });
 
-backOfficersBtn?.addEventListener("click", () => {
-  window.location.href = "runner.html";
+officerDashboardBtn?.addEventListener("click", () => {
+  window.location.href = "index.html";
+});
+
+function setBackupStatusNote(state, text) {
+  if (!backupStatusNote) {
+    return;
+  }
+  backupStatusNote.classList.remove("is-ok", "is-warning", "is-loading");
+  if (state === "ok") {
+    backupStatusNote.classList.add("is-ok");
+  } else if (state === "warning") {
+    backupStatusNote.classList.add("is-warning");
+  } else {
+    backupStatusNote.classList.add("is-loading");
+  }
+  backupStatusNote.textContent = text;
+}
+
+backupDataBtn?.addEventListener("click", () => {
+  // Backup all localStorage data
+  const allData = {
+    meta: {
+      source: "mgi-cs-system-officer",
+      exportedAt: new Date().toISOString(),
+      officer: currentOfficer,
+    },
+    data: {},
+  };
+
+  // Get all data from localStorage
+  const loanRecords = localStorage.getItem("mgi_loan_records");
+  if (loanRecords) {
+    allData.data.mgi_loan_records = JSON.parse(loanRecords);
+  }
+
+  const addressSuggestions = localStorage.getItem("mgi_saved_addresses");
+  if (addressSuggestions) {
+    allData.data.mgi_saved_addresses = JSON.parse(addressSuggestions);
+  }
+
+  const theme = localStorage.getItem("mgi_dashboard_theme");
+  if (theme) {
+    allData.data.mgi_dashboard_theme = theme;
+  }
+
+  const authSettings = localStorage.getItem("mgi_auth_settings");
+  if (authSettings) {
+    allData.data.mgi_auth_settings = JSON.parse(authSettings);
+  }
+
+  const jsonBlob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(jsonBlob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mgi-backup-${new Date().getTime()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  
+  setBackupStatusNote("ok", "Backup status: full backup available");
+});
+
+restoreBackupBtn?.addEventListener("click", () => {
+  restoreBackupInput?.click();
+});
+
+restoreBackupInput?.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const backupData = JSON.parse(event.target?.result || "{}");
+      
+      if (!backupData.data || typeof backupData.data !== "object") {
+        setBackupStatusNote("warning", "Backup status: invalid backup file format");
+        return;
+      }
+
+      // Restore all data from backup
+      if (backupData.data.mgi_loan_records) {
+        localStorage.setItem("mgi_loan_records", JSON.stringify(backupData.data.mgi_loan_records));
+      }
+      if (backupData.data.mgi_saved_addresses) {
+        localStorage.setItem("mgi_saved_addresses", JSON.stringify(backupData.data.mgi_saved_addresses));
+      }
+      if (backupData.data.mgi_dashboard_theme) {
+        localStorage.setItem("mgi_dashboard_theme", backupData.data.mgi_dashboard_theme);
+      }
+      if (backupData.data.mgi_auth_settings) {
+        localStorage.setItem("mgi_auth_settings", JSON.stringify(backupData.data.mgi_auth_settings));
+      }
+
+      setBackupStatusNote("ok", "Backup status: restored successfully");
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (error) {
+      console.error("Restore error:", error);
+      setBackupStatusNote("warning", "Backup status: error reading file");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
 });
 
 function applyTheme(theme) {
@@ -1754,11 +2365,6 @@ drawerCloseBtn?.addEventListener("click", closeDrawer);
 drawerOverlay?.addEventListener("click", closeDrawer);
 
 drawerLogoutBtn?.addEventListener("click", () => {
-  closeDrawer();
-  officerLogoutBtn?.click();
-});
-
-officerLogoutBtn?.addEventListener("click", () => {
   sessionStorage.removeItem(LOGIN_SESSION_KEY);
   sessionStorage.clear();
   window.location.href = "index.html";
@@ -1778,6 +2384,7 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
 
   initializeTheme();
   ensureSyncStatusElement();
+  setBackupStatusNote("ok", "Backup status: full backup available");
   console.info("[session][officer] Startup", {
     officer: currentOfficer,
     loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",

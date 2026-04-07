@@ -32,17 +32,6 @@
     </header>
 
     <main class="portfolio-page" id="runner-main">
-      <section class="panel portfolio-hero">
-        <h2>Account Officer</h2>
-        <div style="display: flex; flex-direction: row; gap: 8px; flex-wrap: wrap;">
-          <a href="officer-dashboard.html?officer=JunJun" style="text-decoration: none;"><button class="btn-primary" type="button" style="padding: 12px 24px; font-size: 1.1rem;">JunJun</button></a>
-          <a href="officer-dashboard.html?officer=Aga" style="text-decoration: none;"><button class="btn-primary" type="button" style="padding: 12px 24px; font-size: 1.1rem;">Aga</button></a>
-          <a href="officer-dashboard.html?officer=Jomar" style="text-decoration: none;"><button class="btn-primary" type="button" style="padding: 12px 24px; font-size: 1.1rem;">Jomar</button></a>
-          <a href="officer-dashboard.html?officer=James" style="text-decoration: none;"><button class="btn-primary" type="button" style="padding: 12px 24px; font-size: 1.1rem;">James</button></a>
-          <a href="officer-dashboard.html?officer=Jambi" style="text-decoration: none;"><button class="btn-primary" type="button" style="padding: 12px 24px; font-size: 1.1rem;">Jambi</button></a>
-          <a href="officer-dashboard.html?officer=Maria%20Joy" style="text-decoration: none;"><button class="btn-primary" type="button" style="padding: 12px 24px; font-size: 1.1rem;">Maria Joy</button></a>
-        </div>
-      </section>
     </main>
 
     <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
@@ -57,11 +46,23 @@
           <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
         </div>
       </div>
+      <div class="side-drawer-officers">
+        <span class="side-drawer-title" style="padding: 8px 16px 0;">Account Officers</span>
+        <div class="side-drawer-officers-list">
+          <a href="officer-dashboard.html?officer=JunJun" class="officer-link">JunJun</a>
+          <a href="officer-dashboard.html?officer=Aga" class="officer-link">Aga</a>
+          <a href="officer-dashboard.html?officer=Jomar" class="officer-link">Jomar</a>
+          <a href="officer-dashboard.html?officer=James" class="officer-link">James</a>
+          <a href="officer-dashboard.html?officer=Jambi" class="officer-link">Jambi</a>
+          <a href="officer-dashboard.html?officer=Maria%20Joy" class="officer-link">Maria Joy</a>
+        </div>
+      </div>
       <div class="side-drawer-footer">
         <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
       </div>
     </aside>
 
+    <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>
     <script src="runner.js"></script>
   </body>

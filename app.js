@@ -57,7 +57,6 @@ const loginMessage = document.getElementById("login-message");
 const loanEntryPanel = document.getElementById("loan-entry-panel");
 const mainContainer = document.querySelector(".container");
 const toggleLoanEntryBtn = document.getElementById("toggle-loan-entry");
-const toggleRunnerBtn = document.getElementById("toggle-runner");
 const releaseSummaryPanel = document.getElementById("release-summary-panel");
 const toggleReleaseSummaryBtn = document.getElementById("toggle-release-summary");
 const releaseSummaryAmount = document.getElementById("release-summary-amount");
@@ -72,6 +71,362 @@ const restoreAuthError = document.getElementById("restore-auth-error");
 const restoreAuthConfirmBtn = document.getElementById("restore-auth-confirm");
 const restoreAuthCancelBtn = document.getElementById("restore-auth-cancel");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+const ADDRESS_SUGGESTIONS_KEY = "mgi_saved_addresses";
+const MAX_ADDRESS_SUGGESTIONS = 20;
+const MAX_VISIBLE_ADDRESS_SUGGESTIONS = 6;
+const addressAutocompleteFields = Array.from(document.querySelectorAll("[data-address-autocomplete]"));
+const purposeLoanSelects = Array.from(document.querySelectorAll(".purpose-of-loan-select"));
+
+function initPurposeLoanSelects() {
+  purposeLoanSelects.forEach((select) => {
+    if (!(select instanceof HTMLSelectElement) || select.dataset.enhanced === "true") {
+      return;
+    }
+
+    select.dataset.enhanced = "true";
+    select.classList.add("purpose-select-native");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "purpose-select-wrap";
+    select.parentNode?.insertBefore(wrapper, select);
+    wrapper.appendChild(select);
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "purpose-select-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+
+    const menu = document.createElement("div");
+    menu.className = "purpose-select-menu";
+    menu.setAttribute("role", "listbox");
+
+    wrapper.append(trigger, menu);
+
+    function closeMenu() {
+      wrapper.classList.remove("is-open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    function openMenu() {
+      wrapper.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+
+    function buildMenu() {
+      menu.innerHTML = "";
+
+      Array.from(select.options).forEach((option) => {
+        const optionButton = document.createElement("button");
+        optionButton.type = "button";
+        optionButton.className = "purpose-select-option";
+        optionButton.textContent = option.textContent || "";
+
+        if (!option.value) {
+          optionButton.classList.add("is-placeholder");
+          optionButton.disabled = true;
+        } else {
+          optionButton.dataset.value = option.value;
+        }
+
+        if (option.value === select.value) {
+          optionButton.classList.add("is-selected");
+        }
+
+        menu.appendChild(optionButton);
+      });
+    }
+
+    function syncFromSelect() {
+      const selectedOption = select.options[select.selectedIndex];
+      trigger.textContent = selectedOption?.textContent?.trim() || "Select type";
+      trigger.classList.toggle("is-placeholder", !select.value);
+
+      menu.querySelectorAll(".purpose-select-option").forEach((node) => {
+        node.classList.toggle("is-selected", node instanceof HTMLElement && node.dataset.value === select.value);
+      });
+    }
+
+    trigger.addEventListener("click", () => {
+      if (wrapper.classList.contains("is-open")) {
+        closeMenu();
+        return;
+      }
+      openMenu();
+    });
+
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMenu();
+      }
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    });
+
+    menu.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest(".purpose-select-option") : null;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const value = target.dataset.value || "";
+      if (!value) {
+        return;
+      }
+
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      syncFromSelect();
+      closeMenu();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Node) || !wrapper.contains(event.target)) {
+        closeMenu();
+      }
+    });
+
+    select.addEventListener("change", syncFromSelect);
+    select.form?.addEventListener("reset", () => {
+      setTimeout(syncFromSelect, 0);
+    });
+
+    buildMenu();
+    syncFromSelect();
+  });
+}
+
+function normalizeAddressSuggestion(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function getSavedAddressSuggestions() {
+  try {
+    const raw = localStorage.getItem(ADDRESS_SUGGESTIONS_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const seen = new Set();
+    return parsed
+      .map(normalizeAddressSuggestion)
+      .filter((value) => {
+        if (!value || seen.has(value)) {
+          return false;
+        }
+        seen.add(value);
+        return true;
+      })
+      .slice(0, MAX_ADDRESS_SUGGESTIONS);
+  } catch {
+    return [];
+  }
+}
+
+function setSavedAddressSuggestions(values) {
+  try {
+    localStorage.setItem(ADDRESS_SUGGESTIONS_KEY, JSON.stringify(values));
+  } catch {
+    return;
+  }
+
+  renderAddressSuggestions();
+}
+
+function removeAddressSuggestion(valueToRemove) {
+  const normalizedValue = normalizeAddressSuggestion(valueToRemove);
+  const nextSuggestions = getSavedAddressSuggestions().filter((value) => value !== normalizedValue);
+  setSavedAddressSuggestions(nextSuggestions);
+}
+
+function buildAddressSuggestionOption(value, isActive) {
+  return `
+    <div class="address-suggestion-option${isActive ? " is-active" : ""}">
+      <button type="button" class="address-suggestion-fill" data-address-value="${sanitize(value)}">
+        <span class="address-suggestion-text">${sanitize(value)}</span>
+      </button>
+      <button type="button" class="address-suggestion-remove" data-remove-address="${sanitize(value)}" aria-label="Remove saved address" title="Remove saved address">
+        <span class="address-suggestion-remove-icon" aria-hidden="true">-</span>
+      </button>
+    </div>
+  `;
+}
+
+function createAddressAutocompleteController(field) {
+  const input = field.querySelector("input");
+  const panel = field.querySelector(".address-suggestions-panel");
+  const list = field.querySelector(".address-suggestions-list");
+  const empty = field.querySelector(".address-suggestions-empty");
+
+  if (!input || !panel || !list || !empty) {
+    return null;
+  }
+
+  let activeIndex = -1;
+
+  function getFilteredSuggestions() {
+    const query = normalizeAddressSuggestion(input.value);
+    const allSuggestions = getSavedAddressSuggestions();
+
+    if (!query) {
+      return allSuggestions.slice(0, MAX_VISIBLE_ADDRESS_SUGGESTIONS);
+    }
+
+    return allSuggestions
+      .filter((value) => value.includes(query))
+      .slice(0, MAX_VISIBLE_ADDRESS_SUGGESTIONS);
+  }
+
+  function render() {
+    const suggestions = getFilteredSuggestions();
+    const hasSavedAddresses = getSavedAddressSuggestions().length > 0;
+    const hasSuggestions = suggestions.length > 0;
+
+    if (activeIndex >= suggestions.length) {
+      activeIndex = hasSuggestions ? 0 : -1;
+    }
+
+    list.innerHTML = suggestions
+      .map((value, index) => buildAddressSuggestionOption(value, index === activeIndex))
+      .join("");
+
+    field.classList.toggle("is-empty", !hasSuggestions);
+    empty.textContent = hasSavedAddresses
+      ? "No saved address matches what you typed yet."
+      : "Saved addresses will appear here after you save one.";
+
+    return hasSuggestions;
+  }
+
+  function open() {
+    field.classList.add("is-open");
+    input.setAttribute("aria-expanded", "true");
+    render();
+  }
+
+  function close() {
+    activeIndex = -1;
+    field.classList.remove("is-open");
+    input.setAttribute("aria-expanded", "false");
+  }
+
+  function applyValue(value) {
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    close();
+  }
+
+  input.setAttribute("aria-haspopup", "listbox");
+  input.setAttribute("aria-expanded", "false");
+
+  input.addEventListener("focus", () => {
+    open();
+  });
+
+  input.addEventListener("input", () => {
+    open();
+  });
+
+  input.addEventListener("keydown", (event) => {
+    const suggestions = getFilteredSuggestions();
+    if (!suggestions.length) {
+      if (event.key === "Escape") {
+        close();
+      }
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      activeIndex = (activeIndex + 1 + suggestions.length) % suggestions.length;
+      render();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      activeIndex = activeIndex <= 0 ? suggestions.length - 1 : activeIndex - 1;
+      render();
+      return;
+    }
+
+    if (event.key === "Enter" && field.classList.contains("is-open") && activeIndex >= 0) {
+      event.preventDefault();
+      applyValue(suggestions[activeIndex]);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      close();
+    }
+  });
+
+  panel.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+
+  panel.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-address]");
+    if (removeButton) {
+      removeAddressSuggestion(removeButton.getAttribute("data-remove-address") || "");
+      render();
+      return;
+    }
+
+    const option = event.target.closest("[data-address-value]");
+    if (!option) {
+      return;
+    }
+
+    applyValue(option.getAttribute("data-address-value") || "");
+  });
+
+  return {
+    field,
+    render,
+    close,
+  };
+}
+
+const addressAutocompleteControllers = addressAutocompleteFields
+  .map(createAddressAutocompleteController)
+  .filter(Boolean);
+
+function renderAddressSuggestions() {
+  addressAutocompleteControllers.forEach((controller) => {
+    controller.render();
+  });
+}
+
+function saveAddressSuggestions(...values) {
+  const nextSuggestions = [...values.map(normalizeAddressSuggestion), ...getSavedAddressSuggestions()]
+    .filter((value, index, array) => value && array.indexOf(value) === index)
+    .slice(0, MAX_ADDRESS_SUGGESTIONS);
+
+  setSavedAddressSuggestions(nextSuggestions);
+}
+
+document.addEventListener("click", (event) => {
+  addressAutocompleteControllers.forEach((controller) => {
+    if (!(event.target instanceof Node) || !controller.field.contains(event.target)) {
+      controller.close();
+    }
+  });
+});
 
 function getStateApiCandidates(stateKey, includeCacheBuster) {
   const query = includeCacheBuster ? "?t=" + Date.now() : "";
@@ -267,6 +622,9 @@ let writeOffPasswordResolver = null;
 let restoreAuthPasswordResolver = null;
 let paymentEntryRowIndex = -1;
 let pendingPaymentConfirm = null;
+let openArrearsEditorRowIndex = -1;
+let openOtherArrearsEditorRowIndex = -1;
+let openRemarksEditorRowIndex = -1;
 let syncStatusElement = null;
 let diagnosticsPanelElement = null;
 let diagnosticsTextElement = null;
@@ -462,8 +820,17 @@ function getRecords() {
   return Array.isArray(recordsCache) ? recordsCache : [];
 }
 
+function mirrorRecordsToLocalStorage(records) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.isArray(records) ? records : []));
+  } catch {
+    // Ignore localStorage quota/availability errors.
+  }
+}
+
 function setRecords(records) {
   recordsCache = Array.isArray(records) ? records : [];
+  mirrorRecordsToLocalStorage(recordsCache);
   lastLocalMutationAt = Date.now();
   hasUnsyncedLocalChanges = true;
   setSyncDebug({ save: `queued(${recordsCache.length})` });
@@ -561,6 +928,7 @@ async function loadRecordsFromServer() {
         return;
       }
       recordsCache = data.payload;
+      mirrorRecordsToLocalStorage(recordsCache);
       console.info("[sync][main] Fetch success", { records: data.payload.length });
       latestSyncIssue = "";
       setSyncStatus("ok", `updated (${data.payload.length} records)`);
@@ -570,6 +938,7 @@ async function loadRecordsFromServer() {
 
     if (data.payload === null) {
       recordsCache = [];
+      mirrorRecordsToLocalStorage(recordsCache);
       console.info("[sync][main] Server has no payload yet");
       latestSyncIssue = "";
       setSyncStatus("ok", "updated (0 records)");
@@ -736,7 +1105,7 @@ function initializeDatePickers() {
   }
 
   const dateInputs = document.querySelectorAll(
-    "#dateGranted, #filter-date-granted, #filter-due-date, #test-date, .due-date-input, .move-date-input"
+    "#dateGranted, #filter-date-granted, #filter-due-date, #test-date"
   );
 
   dateInputs.forEach((input) => {
@@ -744,13 +1113,11 @@ function initializeDatePickers() {
       return;
     }
 
-    const isRowDateInput = input.classList.contains("due-date-input") || input.classList.contains("move-date-input");
-
     window.flatpickr(input, {
       dateFormat: "Y-m-d",
       altInput: true,
       altInputClass: "compact-date-input",
-      altFormat: isRowDateInput ? "m/d/y" : "F j, Y",
+      altFormat: "F j, Y",
       disableMobile: true,
       onChange: (_selectedDates, _dateStr, instance) => {
         instance.input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1513,14 +1880,14 @@ function updateRowSaveButtonStates(rowIndex) {
   }
 
   const dueDateInput = body.querySelector(`.due-date-input[data-index="${rowIndex}"]`);
-  const dueDateBtn = body.querySelector(`.save-due-date-btn[data-index="${rowIndex}"]`);
+  const dueDateBtn = body.querySelector(`.due-date-display-btn[data-index="${rowIndex}"]`);
   if (dueDateInput instanceof HTMLInputElement && dueDateBtn instanceof HTMLButtonElement) {
     const savedDueDate = record.dueDate || computeDueDate(record.dateGranted, record.payableWithin);
     setButtonUnsavedState(dueDateBtn, dueDateInput.value !== savedDueDate);
   }
 
   const moveDateInput = body.querySelector(`.move-date-input[data-index="${rowIndex}"]`);
-  const moveDateBtn = body.querySelector(`.move-date-btn[data-index="${rowIndex}"]`);
+  const moveDateBtn = body.querySelector(`.move-date-display-btn[data-index="${rowIndex}"]`);
   if (moveDateInput instanceof HTMLInputElement && moveDateBtn instanceof HTMLButtonElement) {
     const savedMoveDate = record.payDate || record.dueDate || computeDueDate(record.dateGranted, record.payableWithin);
     setButtonUnsavedState(moveDateBtn, moveDateInput.value !== savedMoveDate);
@@ -1601,6 +1968,179 @@ function updateRowSaveButtonStates(rowIndex) {
     const savedRemarks = String(record.remarks || "").trim();
     setButtonUnsavedState(remarksBtn, remarksInput.value.trim() !== savedRemarks);
   }
+}
+
+function saveDueDateForRow(rowIndex, updatedDueDate) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    showMessage("Invalid record selected.", "error");
+    return false;
+  }
+
+  if (!updatedDueDate) {
+    showMessage("Please select a due date.", "error");
+    return false;
+  }
+
+  const records = getRecords();
+  if (!records[rowIndex]) {
+    showMessage("Record no longer exists.", "error");
+    return false;
+  }
+
+  const previousDueDate = records[rowIndex].dueDate || computeDueDate(records[rowIndex].dateGranted, records[rowIndex].payableWithin);
+  if (!records[rowIndex].payDate || records[rowIndex].payDate === previousDueDate) {
+    records[rowIndex].payDate = updatedDueDate;
+  }
+  records[rowIndex].dueDate = updatedDueDate;
+  setRecords(records);
+  renderRecords();
+  showMessage("Due date updated.", "success");
+  showToast("Due date updated", "success");
+  return true;
+}
+
+function saveMoveDateForRow(rowIndex, newDate) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    showMessage("Invalid record selected.", "error");
+    return false;
+  }
+
+  if (!newDate) {
+    showMessage("Please select a new pay date.", "error");
+    return false;
+  }
+
+  const records = getRecords();
+  if (!records[rowIndex]) {
+    showMessage("Record no longer exists.", "error");
+    return false;
+  }
+
+  records[rowIndex].payDate = newDate;
+  setRecords(records);
+  renderRecords();
+  showMessage("Pay date moved.", "success");
+  showToast("Pay date moved", "success");
+  return true;
+}
+
+function toggleCollectibleEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  const editor = body.querySelector(`.collectible-editor[data-index="${rowIndex}"]`);
+  if (!(editor instanceof HTMLElement)) {
+    return;
+  }
+
+  const currentlyOpen = !editor.classList.contains("collectible-editor-hidden");
+  const shouldOpen = forceOpen ? true : !currentlyOpen;
+  editor.classList.toggle("collectible-editor-hidden", !shouldOpen);
+}
+
+function toggleArrearsEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  if (forceOpen && Number.isInteger(openArrearsEditorRowIndex) && openArrearsEditorRowIndex >= 0 && openArrearsEditorRowIndex !== rowIndex) {
+    const previousEditor = body.querySelector(`.arrears-editor[data-index="${openArrearsEditorRowIndex}"]`);
+    if (previousEditor instanceof HTMLElement) {
+      previousEditor.classList.add("arrears-editor-hidden");
+    }
+  }
+
+  const editor = body.querySelector(`.arrears-editor[data-index="${rowIndex}"]`);
+  if (!(editor instanceof HTMLElement)) {
+    return;
+  }
+
+  const currentlyOpen = !editor.classList.contains("arrears-editor-hidden");
+  const shouldOpen = forceOpen ? true : !currentlyOpen;
+  editor.classList.toggle("arrears-editor-hidden", !shouldOpen);
+  openArrearsEditorRowIndex = shouldOpen ? rowIndex : (openArrearsEditorRowIndex === rowIndex ? -1 : openArrearsEditorRowIndex);
+
+  if (shouldOpen) {
+    const input = editor.querySelector(`.arrears-input[data-index="${rowIndex}"]`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
+  }
+}
+
+function toggleOtherArrearsEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  if (forceOpen && Number.isInteger(openOtherArrearsEditorRowIndex) && openOtherArrearsEditorRowIndex >= 0 && openOtherArrearsEditorRowIndex !== rowIndex) {
+    const previousEditor = body.querySelector(`.other-arrears-editor[data-index="${openOtherArrearsEditorRowIndex}"]`);
+    if (previousEditor instanceof HTMLElement) {
+      previousEditor.classList.add("other-arrears-editor-hidden");
+    }
+  }
+
+  const editor = body.querySelector(`.other-arrears-editor[data-index="${rowIndex}"]`);
+  if (!(editor instanceof HTMLElement)) {
+    return;
+  }
+
+  const currentlyOpen = !editor.classList.contains("other-arrears-editor-hidden");
+  const shouldOpen = forceOpen ? true : !currentlyOpen;
+  editor.classList.toggle("other-arrears-editor-hidden", !shouldOpen);
+  openOtherArrearsEditorRowIndex = shouldOpen
+    ? rowIndex
+    : (openOtherArrearsEditorRowIndex === rowIndex ? -1 : openOtherArrearsEditorRowIndex);
+
+  if (shouldOpen) {
+    const input = editor.querySelector(`.other-arrears-input[data-index="${rowIndex}"]`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
+  }
+}
+
+function toggleRemarksEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  if (forceOpen && Number.isInteger(openRemarksEditorRowIndex) && openRemarksEditorRowIndex >= 0 && openRemarksEditorRowIndex !== rowIndex) {
+    const previousEditor = body.querySelector(`.remarks-editor[data-index="${openRemarksEditorRowIndex}"]`);
+    if (previousEditor instanceof HTMLElement) {
+      previousEditor.classList.add("remarks-editor-hidden");
+    }
+  }
+
+  const editor = body.querySelector(`.remarks-editor[data-index="${rowIndex}"]`);
+  if (!(editor instanceof HTMLElement)) {
+    return;
+  }
+
+  const currentlyOpen = !editor.classList.contains("remarks-editor-hidden");
+  const shouldOpen = forceOpen ? true : !currentlyOpen;
+  editor.classList.toggle("remarks-editor-hidden", !shouldOpen);
+  openRemarksEditorRowIndex = shouldOpen ? rowIndex : (openRemarksEditorRowIndex === rowIndex ? -1 : openRemarksEditorRowIndex);
+
+  if (shouldOpen) {
+    const input = editor.querySelector(`.remarks-input[data-index="${rowIndex}"]`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
+  }
+}
+
+function hasOpenInlineEditor() {
+  return (
+    (Number.isInteger(openArrearsEditorRowIndex) && openArrearsEditorRowIndex >= 0) ||
+    (Number.isInteger(openOtherArrearsEditorRowIndex) && openOtherArrearsEditorRowIndex >= 0) ||
+    (Number.isInteger(openRemarksEditorRowIndex) && openRemarksEditorRowIndex >= 0) ||
+    Boolean(body?.querySelector(".collectible-editor:not(.collectible-editor-hidden)"))
+  );
 }
 
 function normalizeDateSearchValue(rawValue) {
@@ -2532,6 +3072,7 @@ function openPaymentHistoryModal(record, paymentHistory) {
     return;
   }
 
+  let totalPaid = 0;
   const rows = [...paymentHistory]
     .reverse()
     .map((item, idx) => {
@@ -2542,6 +3083,7 @@ function openPaymentHistoryModal(record, paymentHistory) {
       const interestPaid = isHatagMode
         ? (Number.isFinite(amountPaid) && amountPaid > 0 ? amountPaid : 0)
         : storedInterestPaid;
+      totalPaid += amountPaid;
 
       return `
         <div class="payment-history-row">
@@ -2566,6 +3108,7 @@ function openPaymentHistoryModal(record, paymentHistory) {
       </div>
       ${rows}
     </div>
+    <div class="payment-history-total">Total Paid: <strong>${formatCurrency(totalPaid)}</strong></div>
   `;
 
   paymentHistoryModal.classList.add("show");
@@ -2674,7 +3217,7 @@ function renderRecords() {
   }
 
   if (rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="15" class="empty">No records yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">No records yet.</td></tr>';
     const hasActiveFilter = hasActiveFilters(activeFilters);
 
     if (records.length > 0 && hasActiveFilter) {
@@ -2716,40 +3259,30 @@ function renderRecords() {
         const paymentCount = paymentHistory.length;
         return `
       <tr class="${isPastDue ? "past-due-row" : ""}">
-        <td>${record.name}</td>
-        <td>${sanitize(String(record.address || "-"))}</td>
-        <td>${sanitize(String(record.contactNumber || "-"))}</td>
-        <td>${sanitize(String(record.purposeOfLoan || "-"))}</td>
-        <td>${sanitize(String(record.modeOfPayment || "-"))}</td>
-        <td>${sanitize(getTypeLabel(record.payableWithin))}</td>
         <td>
-          ${formatCurrency(record.amount)}
+          <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
+          <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
+          <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+        </td>
+        <td>
+          <div class="loan-info-purpose"><b>Purpose of Loan:</b> ${sanitize(String(record.purposeOfLoan || "-"))}</div>
+          <div class="loan-info-mode"><b>Mode of Payment:</b> ${sanitize(String(record.modeOfPayment || "-"))}</div>
+          <div class="loan-info-type"><b>Type of Loan:</b> ${sanitize(getTypeLabel(record.payableWithin))}</div>
+        </td>
+        <td>
+          <div class="amount-info-rate">Interest rate: <span class="amount-info-rate-value">${getEffectiveInterestRate(record).toFixed(2)}%</span></div>
+          <div class="amount-info-line"><b>Grant Amount:</b> <span class="grant-amount-value">${formatCurrency(record.amount)}</span></div>
+          <div class="amount-info-line"><b>Date Granted:</b> ${formatLongDate(record.dateGranted)}</div>
+          <button type="button" class="btn-secondary due-date-display-btn ${isPastDue ? "past-due-cell" : ""}" data-index="${index}">Due Date: ${formatLongDate(dueDate)}</button>
+          <input type="date" class="due-date-input due-date-input-hidden" data-index="${index}" value="${dueDate}" />
           ${
             isWeeklyFixedLoan(record.payableWithin)
               ? `<div class="paid-controls"><input type="text" class="weekly-amount-input" data-index="${index}" value="${addCommas(formatPlainAmount(record.amount))}" inputmode="decimal" autocomplete="off" /><button type="button" class="btn-secondary save-weekly-settings-btn" data-index="${index}">Save Weekly</button></div>`
               : ""
           }
-        </td>
-        <td>${formatLongDate(record.dateGranted)}</td>
-        <td class="${isPastDue ? "past-due-cell" : ""}">
-          <small class="mini-note">${formatLongDate(dueDate)}</small>
+          <button type="button" class="btn-secondary collectible-display-btn" data-index="${index}">${formatCurrency(collectibleAmount)}/${getCollectibleLabelForRecord(record)}</button>
           ${isPastDue ? `<small class="mini-note past-due-note">Past Due (${daysPastDue} day${daysPastDue === 1 ? "" : "s"})</small>` : ""}
-          <div class="paid-controls">
-            <input type="date" class="due-date-input" data-index="${index}" value="${dueDate}" />
-            <button type="button" class="btn-secondary save-due-date-btn" data-index="${index}">Save Due Date</button>
-          </div>
-        </td>
-        <td>
-          ${getEffectiveInterestRate(record).toFixed(2)}%
-          <small class="per-period">${formatCurrency(collectibleAmount)}/${getCollectibleLabelForRecord(record)}</small>
-          ${
-            isWriteOffActive
-              ? `<small class="mini-note">Write-Off active since ${sanitize(formatLongDate(writeOffFreezeDate))}</small>`
-              : hatagHatagActive
-                ? `<small class="mini-note">Hatag-Hatag active since ${sanitize(formatLongDate(hatagHatagDate))}</small>`
-                : ""
-          }
-          <div class="paid-controls">
+          <div class="paid-controls collectible-editor collectible-editor-hidden" data-index="${index}">
             <input type="text" class="collectible-edit-input" data-index="${index}" value="${addCommas(formatPlainAmount(collectibleAmount))}" inputmode="decimal" autocomplete="off" />
             <select class="collectible-period-select" data-index="${index}">
               <option value="Daily" ${collectiblePeriod === "Daily" ? "selected" : ""}>Daily</option>
@@ -2759,50 +3292,53 @@ function renderRecords() {
             </select>
             <button type="button" class="btn-secondary save-collectible-btn" data-index="${index}">Save</button>
           </div>
+          ${
+            isWriteOffActive
+              ? `<small class="mini-note">Write-Off active since ${sanitize(formatLongDate(writeOffFreezeDate))}</small>`
+              : hatagHatagActive
+                ? `<small class="mini-note">Hatag-Hatag active since ${sanitize(formatLongDate(hatagHatagDate))}</small>`
+                : ""
+          }
         </td>
         <td>
-          <div class="move-date-controls">
-            <input type="date" class="move-date-input" data-index="${index}" value="${payDate}" />
-            <button type="button" class="btn-primary move-date-btn" data-index="${index}">Save</button>
+          <div class="record-adjustment-controls">
+            <button type="button" class="btn-primary move-date-display-btn" data-index="${index}">Moved pay date: ${formatLongDate(payDate)}</button>
+            <input type="date" class="move-date-input due-date-input-hidden" data-index="${index}" value="${payDate}" />
+            <button type="button" class="btn-secondary arrears-display-btn" data-index="${index}">Arrears: ${formatCurrency(arrearsAmount)} (${arrearsType})</button>
+            <div class="paid-controls arrears-editor ${openArrearsEditorRowIndex === index ? "" : "arrears-editor-hidden"}" data-index="${index}">
+              <small class="mini-note">${arrearsType}</small>
+              <input type="text" class="arrears-input" data-index="${index}" value="${addCommas(formatPlainAmount(arrearsAmount))}" inputmode="decimal" autocomplete="off" />
+              <select class="arrears-type-select" data-index="${index}">
+                <option value="Principal" ${arrearsType === "Principal" ? "selected" : ""}>Principal</option>
+                <option value="Interest" ${arrearsType === "Interest" ? "selected" : ""}>Interest</option>
+              </select>
+              <button type="button" class="btn-secondary save-arrears-btn" data-index="${index}">Save</button>
+            </div>
+            <button type="button" class="btn-secondary open-remarks-btn" data-index="${index}">${escapedRemarks ? `Remarks: ${escapedRemarks}` : "Remarks"}</button>
+            <button type="button" class="btn-secondary other-arrears-display-btn" data-index="${index}">Other Arrears: ${formatCurrency(otherArrearsAmount)} (${otherArrearsType})</button>
+            <div class="paid-controls other-arrears-editor ${openOtherArrearsEditorRowIndex === index ? "" : "other-arrears-editor-hidden"}" data-index="${index}">
+              <small class="mini-note">${otherArrearsType}</small>
+              <input type="text" class="other-arrears-input" data-index="${index}" value="${addCommas(formatPlainAmount(otherArrearsAmount))}" inputmode="decimal" autocomplete="off" />
+              <select class="other-arrears-type-select" data-index="${index}">
+                <option value="Principal" ${otherArrearsType === "Principal" ? "selected" : ""}>Principal</option>
+                <option value="Interest" ${otherArrearsType === "Interest" ? "selected" : ""}>Interest</option>
+              </select>
+              <button type="button" class="btn-secondary save-other-arrears-btn" data-index="${index}">Save</button>
+            </div>
+            <div class="remarks-controls remarks-editor ${openRemarksEditorRowIndex === index ? "" : "remarks-editor-hidden"}" data-index="${index}">
+              <input type="text" class="remarks-input" data-index="${index}" value="${escapedRemarks}" placeholder="Add remarks..." autocomplete="off" />
+              <button type="button" class="btn-secondary save-remarks-btn" data-index="${index}">Save</button>
+            </div>
           </div>
-          <small class="mini-note">Moved pay date: ${formatLongDate(payDate)}</small>
         </td>
-        <td>
-          <div class="paid-controls arrears-controls">
-            <small class="mini-note">${formatCurrency(arrearsAmount)} (${arrearsType})</small>
-            <input type="text" class="arrears-input" data-index="${index}" value="${addCommas(formatPlainAmount(arrearsAmount))}" inputmode="decimal" autocomplete="off" />
-            <select class="arrears-type-select" data-index="${index}">
-              <option value="Principal" ${arrearsType === "Principal" ? "selected" : ""}>Principal</option>
-              <option value="Interest" ${arrearsType === "Interest" ? "selected" : ""}>Interest</option>
-            </select>
-            <button type="button" class="btn-secondary save-arrears-btn" data-index="${index}">Save</button>
-          </div>
-        </td>
-        <td>
-          <div class="paid-controls other-arrears-controls">
-            <small class="mini-note">${formatCurrency(otherArrearsAmount)} (${otherArrearsType})</small>
-            <input type="text" class="other-arrears-input" data-index="${index}" value="${addCommas(formatPlainAmount(otherArrearsAmount))}" inputmode="decimal" autocomplete="off" />
-            <select class="other-arrears-type-select" data-index="${index}">
-              <option value="Principal" ${otherArrearsType === "Principal" ? "selected" : ""}>Principal</option>
-              <option value="Interest" ${otherArrearsType === "Interest" ? "selected" : ""}>Interest</option>
-            </select>
-            <button type="button" class="btn-secondary save-other-arrears-btn" data-index="${index}">Save</button>
-          </div>
-        </td>
-        <td>${formatCurrency(computeRemainingPayable(record))}</td>
-        <td>
-          <div class="paid-controls">
-            <small class="mini-note">Interest due: ${formatCurrency(paymentBreakdown.interestOutstanding)} | Principal due: ${formatCurrency(paymentBreakdown.principalOutstanding)}</small>
-            <button type="button" class="btn-pay save-paid-btn" data-index="${index}">Pay</button>
-          </div>
-          <small class="mini-note">Total paid: ${formatCurrency(totalPaidAmount)}</small>
-          <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
-          <small class="mini-note">${paymentCount} payment${paymentCount === 1 ? "" : "s"}</small>
+        <td class="outstanding-balance-cell">
+          <span class="mobile-field-label">Outstanding Balance</span>
+          <span class="outstanding-balance-value">${formatCurrency(computeRemainingPayable(record))}</span>
         </td>
         <td>
           <div class="remarks-controls">
-            <input type="text" class="remarks-input" data-index="${index}" value="${escapedRemarks}" placeholder="Add remarks..." autocomplete="off" />
-            <button type="button" class="btn-secondary save-remarks-btn" data-index="${index}">Save</button>
+            <button type="button" class="btn-pay save-paid-btn" data-index="${index}">Pay</button>
+            <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
             <button type="button" class="btn-secondary statement-btn" data-index="${index}">Statement of Account</button>
             <button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${
               isWriteOffActive ? "Write-Off Active" : "Write-Off"
@@ -3023,6 +3559,7 @@ form.addEventListener("submit", (event) => {
   const records = getRecords();
   records.unshift(nextRecord);
   setRecords(records);
+  saveAddressSuggestions(address, coMakerAddress);
   renderRecords();
 
   form.reset();
@@ -3084,6 +3621,22 @@ body.addEventListener("change", (event) => {
     return;
   }
 
+  if (target instanceof HTMLInputElement && target.classList.contains("due-date-input")) {
+    const rowIndex = Number(target.dataset.index);
+    if (Number.isInteger(rowIndex)) {
+      saveDueDateForRow(rowIndex, target.value);
+    }
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.classList.contains("move-date-input")) {
+    const rowIndex = Number(target.dataset.index);
+    if (Number.isInteger(rowIndex)) {
+      saveMoveDateForRow(rowIndex, target.value);
+    }
+    return;
+  }
+
   const rowIndex = Number(target.dataset.index);
   if (Number.isInteger(rowIndex)) {
     updateRowSaveButtonStates(rowIndex);
@@ -3091,6 +3644,103 @@ body.addEventListener("change", (event) => {
 });
 
 body.addEventListener("click", async (event) => {
+  const saveArrearsFromEditor = event.target.closest(".save-arrears-btn");
+  const saveOtherArrearsFromEditor = event.target.closest(".save-other-arrears-btn");
+  const saveRemarksFromEditor = event.target.closest(".save-remarks-btn");
+  if (
+    (event.target.closest(".arrears-editor") || event.target.closest(".other-arrears-editor") || event.target.closest(".remarks-editor")) &&
+    !saveArrearsFromEditor &&
+    !saveOtherArrearsFromEditor &&
+    !saveRemarksFromEditor
+  ) {
+    return;
+  }
+
+  const collectibleDisplayBtn = event.target.closest(".collectible-display-btn");
+  if (collectibleDisplayBtn) {
+    const rowIndex = Number(collectibleDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+    toggleCollectibleEditor(rowIndex);
+    return;
+  }
+
+  const arrearsDisplayBtn = event.target.closest(".arrears-display-btn");
+  if (arrearsDisplayBtn) {
+    const rowIndex = Number(arrearsDisplayBtn.dataset.index);
+    if (Number.isInteger(rowIndex)) {
+      toggleArrearsEditor(rowIndex);
+    }
+    return;
+  }
+
+  const otherArrearsDisplayBtn = event.target.closest(".other-arrears-display-btn");
+  if (otherArrearsDisplayBtn) {
+    const rowIndex = Number(otherArrearsDisplayBtn.dataset.index);
+    if (Number.isInteger(rowIndex)) {
+      toggleOtherArrearsEditor(rowIndex);
+    }
+    return;
+  }
+
+  const openRemarksBtn = event.target.closest(".open-remarks-btn");
+  if (openRemarksBtn) {
+    const rowIndex = Number(openRemarksBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    toggleRemarksEditor(rowIndex);
+    return;
+  }
+
+  const dueDateDisplayBtn = event.target.closest(".due-date-display-btn");
+  if (dueDateDisplayBtn) {
+    const rowIndex = Number(dueDateDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const dueDateInputEl = body.querySelector(`.due-date-input[data-index="${rowIndex}"]`);
+    if (!(dueDateInputEl instanceof HTMLInputElement)) {
+      showMessage("Unable to open due date picker.", "error");
+      return;
+    }
+
+    if (typeof dueDateInputEl.showPicker === "function") {
+      dueDateInputEl.showPicker();
+    } else {
+      dueDateInputEl.click();
+    }
+    return;
+  }
+
+  const moveDateDisplayBtn = event.target.closest(".move-date-display-btn");
+  if (moveDateDisplayBtn) {
+    const rowIndex = Number(moveDateDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const moveDateInputEl = body.querySelector(`.move-date-input[data-index="${rowIndex}"]`);
+    if (!(moveDateInputEl instanceof HTMLInputElement)) {
+      showMessage("Unable to open pay date picker.", "error");
+      return;
+    }
+
+    if (typeof moveDateInputEl.showPicker === "function") {
+      moveDateInputEl.showPicker();
+    } else {
+      moveDateInputEl.click();
+    }
+    return;
+  }
+
   const saveOtherArrearsBtn = event.target.closest(".save-other-arrears-btn");
   if (saveOtherArrearsBtn) {
     const rowIndex = Number(saveOtherArrearsBtn.dataset.index);
@@ -3099,7 +3749,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    const controlsWrap = saveOtherArrearsBtn.closest(".other-arrears-controls");
+    const controlsWrap = saveOtherArrearsBtn.closest(".other-arrears-editor");
     const otherArrearsInputEl = controlsWrap?.querySelector(`.other-arrears-input[data-index="${rowIndex}"]`);
     const otherArrearsTypeSelectEl = controlsWrap?.querySelector(`.other-arrears-type-select[data-index="${rowIndex}"]`);
     const updatedOtherArrears = parseAmount(otherArrearsInputEl instanceof HTMLInputElement ? otherArrearsInputEl.value : "0");
@@ -3120,11 +3770,12 @@ body.addEventListener("click", async (event) => {
     }
 
     records[rowIndex].manualOtherArrearsAmount = updatedOtherArrears;
-  records[rowIndex].otherArrearsType = selectedOtherArrearsType;
+    records[rowIndex].otherArrearsType = selectedOtherArrearsType;
     setRecords(records);
     renderRecords();
     showMessage("Other arrears updated.", "success");
     showToast("Other arrears updated", "success");
+    toggleOtherArrearsEditor(rowIndex, false);
     return;
   }
 
@@ -3136,7 +3787,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    const controlsWrap = saveArrearsBtn.closest(".arrears-controls");
+    const controlsWrap = saveArrearsBtn.closest(".arrears-editor");
     const arrearsInputEl = controlsWrap?.querySelector(`.arrears-input[data-index="${rowIndex}"]`);
     const arrearsTypeSelectEl = controlsWrap?.querySelector(`.arrears-type-select[data-index="${rowIndex}"]`);
     const updatedArrears = parseAmount(arrearsInputEl instanceof HTMLInputElement ? arrearsInputEl.value : "0");
@@ -3162,42 +3813,16 @@ body.addEventListener("click", async (event) => {
     renderRecords();
     showMessage("Arrears updated.", "success");
     showToast("Arrears updated", "success");
+    toggleArrearsEditor(rowIndex, false);
     return;
   }
 
   const saveDueDateBtn = event.target.closest(".save-due-date-btn");
   if (saveDueDateBtn) {
     const rowIndex = Number(saveDueDateBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
-
     const dueDateInputEl = body.querySelector(`.due-date-input[data-index="${rowIndex}"]`);
     const updatedDueDate = dueDateInputEl instanceof HTMLInputElement ? dueDateInputEl.value : "";
-    if (!updatedDueDate) {
-      showMessage("Please select a due date.", "error");
-      return;
-    }
-
-    const records = getRecords();
-    if (!records[rowIndex]) {
-      showMessage("Record no longer exists.", "error");
-      return;
-    }
-
-    const dueDateBtn = body.querySelector(`.save-due-date-btn[data-index="${rowIndex}"]`);
-    dueDateBtn?.classList.remove("btn-unsaved");
-
-    const previousDueDate = records[rowIndex].dueDate || computeDueDate(records[rowIndex].dateGranted, records[rowIndex].payableWithin);
-    if (!records[rowIndex].payDate || records[rowIndex].payDate === previousDueDate) {
-      records[rowIndex].payDate = updatedDueDate;
-    }
-    records[rowIndex].dueDate = updatedDueDate;
-    setRecords(records);
-    renderRecords();
-    showMessage("Due date updated.", "success");
-    showToast("Due date updated", "success");
+    saveDueDateForRow(rowIndex, updatedDueDate);
     return;
   }
 
@@ -3243,6 +3868,7 @@ body.addEventListener("click", async (event) => {
     renderRecords();
     showMessage("Collectible updated.", "success");
     showToast("Collectible updated", "success");
+    toggleCollectibleEditor(rowIndex, false);
     return;
   }
 
@@ -3320,6 +3946,7 @@ body.addEventListener("click", async (event) => {
     renderRecords();
     showMessage("Remarks saved.", "success");
     showToast("Remarks saved", "success");
+    toggleRemarksEditor(rowIndex, false);
     return;
   }
 
@@ -3450,26 +4077,9 @@ body.addEventListener("click", async (event) => {
   const moveDateBtn = event.target.closest(".move-date-btn");
   if (moveDateBtn) {
     const rowIndex = Number(moveDateBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
     const input = body.querySelector(`.move-date-input[data-index="${rowIndex}"]`);
     const newDate = input instanceof HTMLInputElement ? input.value : "";
-    if (!newDate) {
-      showMessage("Please select a new pay date.", "error");
-      return;
-    }
-    const records = getRecords();
-    if (!records[rowIndex]) {
-      showMessage("Record no longer exists.", "error");
-      return;
-    }
-    records[rowIndex].payDate = newDate;
-    setRecords(records);
-    renderRecords();
-    showMessage("Pay date moved.", "success");
-    showToast("Pay date moved", "success");
+    saveMoveDateForRow(rowIndex, newDate);
     return;
   }
 
@@ -3693,6 +4303,9 @@ filterDueDateInput.addEventListener("input", renderRecords);
 filterPayableSelect.addEventListener("change", renderRecords);
 sortBySelect.addEventListener("change", renderRecords);
 exportWordBtn.addEventListener("click", exportVisibleRecords);
+
+initPurposeLoanSelects();
+renderAddressSuggestions();
 backupDataBtn?.addEventListener("click", () => {
   closeDrawer();
   downloadFullBackup();
@@ -3851,8 +4464,16 @@ function updateModeOfPaymentForLoanType() {
     return;
   }
 
+  const applyModeValue = (nextValue) => {
+    const changed = modeOfPaymentSelect.value !== nextValue;
+    modeOfPaymentSelect.value = nextValue;
+    if (changed) {
+      modeOfPaymentSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+
   if (isBiMonthlyAutoLoan(payableWithinSelect.value)) {
-    modeOfPaymentSelect.value = "Bi-Monthly";
+    applyModeValue("Bi-Monthly");
     modeOfPaymentSelect.disabled = true;
     const label = payableWithinSelect.value === LOAN_TYPE_BI_MONTHLY_OPEN
       ? "Bi - Monthly loans automatically use Bi-Monthly mode of payment."
@@ -3862,7 +4483,7 @@ function updateModeOfPaymentForLoanType() {
   }
 
   if (isWeeklyFixedLoan(payableWithinSelect.value) || isMonthly100FixedLoan(payableWithinSelect.value)) {
-    modeOfPaymentSelect.value = "Weekly";
+    applyModeValue("Weekly");
     modeOfPaymentSelect.disabled = true;
     modeOfPaymentSelect.title = isMonthly100FixedLoan(payableWithinSelect.value)
       ? "Monthly (14 weeks) automatically uses Weekly mode of payment. Interest remains monthly."
@@ -3879,10 +4500,6 @@ payableWithinSelect?.addEventListener("change", updateModeOfPaymentForLoanType);
 
 toggleLoanEntryBtn?.addEventListener("click", () => {
   updateLoanEntryVisibility(!isLoanEntryOpen);
-});
-
-toggleRunnerBtn?.addEventListener("click", () => {
-  window.location.href = "runner.html";
 });
 
 toggleReleaseSummaryBtn?.addEventListener("click", () => {
@@ -4028,12 +4645,18 @@ testDateInput.value = toIsoDate(new Date());
 // Keep totals and overdue values current without manual browser refresh.
 // Also sync with server so changes from other devices appear automatically.
 setInterval(() => {
+  if (hasOpenInlineEditor()) {
+    return;
+  }
   loadRecordsFromServer().then(() => renderRecords());
 }, AUTO_REFRESH_MS);
 
 // If records are changed in another tab, refresh this page automatically.
 window.addEventListener("storage", (event) => {
   if (event.key === STORAGE_KEY) {
+    if (hasOpenInlineEditor()) {
+      return;
+    }
     renderRecords();
   }
 });
