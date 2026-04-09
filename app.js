@@ -2,7 +2,6 @@
 const form = document.getElementById("loan-form");
 const message = document.getElementById("form-message");
 const body = document.getElementById("records-body");
-const clearBtn = document.getElementById("clear-records");
 const amountInput = document.getElementById("amount");
 const payableWithinSelect = document.getElementById("payableWithin");
 const modeOfPaymentSelect = document.getElementById("modeOfPayment");
@@ -70,6 +69,15 @@ const restoreAuthPasswordInput = document.getElementById("restore-auth-password"
 const restoreAuthError = document.getElementById("restore-auth-error");
 const restoreAuthConfirmBtn = document.getElementById("restore-auth-confirm");
 const restoreAuthCancelBtn = document.getElementById("restore-auth-cancel");
+const editRecordModal = document.getElementById("edit-record-modal");
+const editRecordTitle = document.getElementById("edit-record-title");
+const editRecordLabel = document.getElementById("edit-record-label");
+const editRecordInput = document.getElementById("edit-record-input");
+const editRecordError = document.getElementById("edit-record-error");
+const editRecordConfirmBtn = document.getElementById("edit-record-confirm");
+const editRecordCancelBtn = document.getElementById("edit-record-cancel");
+const recordsSectionTitle = document.getElementById("records-section-title");
+const dashboardViewLinks = Array.from(document.querySelectorAll("[data-dashboard-view]"));
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
 const ADDRESS_SUGGESTIONS_KEY = "mgi_saved_addresses";
 const MAX_ADDRESS_SUGGESTIONS = 20;
@@ -617,16 +625,23 @@ const LOAN_TYPE_MONTHLY_FIXED_60 = "monthly_60_fixed";
 const LOAN_TYPE_MONTHLY_FIXED_100 = "monthly_100_fixed";
 const LOAN_TYPE_EMERGENCY_FIXED = "emergency_fixed";
 const LOAN_TYPE_NO_LISTED = "no_listed";
+const DASHBOARD_VIEW_ACTIVE = "active";
+const DASHBOARD_VIEW_SETTLED = "settled";
+const PAYMENT_MODE_REGULAR = "regular";
+const PAYMENT_MODE_PRINCIPAL_ONLY = "principal_only";
 let toastTimer;
 let isLoanEntryOpen = false;
 let isReleaseSummaryOpen = false;
 let writeOffPasswordResolver = null;
 let restoreAuthPasswordResolver = null;
+let editRecordResolver = null;
 let paymentEntryRowIndex = -1;
+let paymentEntryMode = PAYMENT_MODE_REGULAR;
 let pendingPaymentConfirm = null;
 let openArrearsEditorRowIndex = -1;
 let openOtherArrearsEditorRowIndex = -1;
 let openRemarksEditorRowIndex = -1;
+let openRebateEditorRowIndex = -1;
 let syncStatusElement = null;
 let diagnosticsPanelElement = null;
 let diagnosticsTextElement = null;
@@ -638,11 +653,38 @@ let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
 let hasUnsyncedLocalChanges = false;
+const currentDashboardView = getDashboardViewFromLocation();
+const isSettledDashboardView = currentDashboardView === DASHBOARD_VIEW_SETTLED;
 let syncDebugState = {
   save: "idle",
   fetch: "idle",
   guard: "no",
 };
+
+function getDashboardViewFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("view") === DASHBOARD_VIEW_SETTLED ? DASHBOARD_VIEW_SETTLED : DASHBOARD_VIEW_ACTIVE;
+  } catch {
+    return DASHBOARD_VIEW_ACTIVE;
+  }
+}
+
+function isSettledRecord(record) {
+  return record?.isSettled === true;
+}
+
+function getActiveDashboardRecords(records) {
+  return (Array.isArray(records) ? records : []).filter((record) => !isSettledRecord(record));
+}
+
+function getSettledDashboardRecords(records) {
+  return (Array.isArray(records) ? records : []).filter((record) => isSettledRecord(record));
+}
+
+function getRecordsForCurrentDashboardView(records) {
+  return isSettledDashboardView ? getSettledDashboardRecords(records) : getActiveDashboardRecords(records);
+}
 
 function getOfficerStorageKey(officerName) {
   return `${OFFICER_STORAGE_KEY_PREFIX}${officerName}`;
@@ -774,6 +816,10 @@ function getWriteOffPassword() {
   return String(getAuthSettings().mainPassword || DEFAULT_AUTH_SETTINGS.mainPassword);
 }
 
+function getAdminPassword() {
+  return String(getAuthSettings().adminPassword || DEFAULT_AUTH_SETTINGS.adminPassword);
+}
+
 function closeRestoreAuthModal(result) {
   if (!restoreAuthModal) {
     if (typeof restoreAuthPasswordResolver === "function") {
@@ -819,6 +865,65 @@ function requestRestoreAdminPassword() {
 
   return new Promise((resolve) => {
     restoreAuthPasswordResolver = resolve;
+  });
+}
+
+function closeEditRecordModal(result) {
+  if (!editRecordModal) {
+    if (typeof editRecordResolver === "function") {
+      editRecordResolver(result);
+      editRecordResolver = null;
+    }
+    return;
+  }
+
+  editRecordModal.classList.remove("show");
+  editRecordModal.setAttribute("aria-hidden", "true");
+
+  if (editRecordInput) {
+    editRecordInput.value = "";
+  }
+  if (editRecordError) {
+    editRecordError.textContent = "";
+  }
+
+  if (typeof editRecordResolver === "function") {
+    editRecordResolver(result);
+    editRecordResolver = null;
+  }
+}
+
+function requestRecordFieldEdit(config) {
+  const titleText = String(config?.title || "Edit value:");
+  const labelText = String(config?.label || "Value");
+  const initialValue = String(config?.value || "");
+
+  if (!editRecordModal || !editRecordInput) {
+    const fallback = window.prompt(titleText, initialValue);
+    return Promise.resolve(fallback);
+  }
+
+  if (editRecordTitle) {
+    editRecordTitle.textContent = titleText;
+  }
+  if (editRecordLabel) {
+    editRecordLabel.textContent = labelText;
+  }
+  if (editRecordError) {
+    editRecordError.textContent = "";
+  }
+
+  editRecordInput.value = initialValue;
+  editRecordModal.classList.add("show");
+  editRecordModal.setAttribute("aria-hidden", "false");
+
+  setTimeout(() => {
+    editRecordInput.focus();
+    editRecordInput.select();
+  }, 0);
+
+  return new Promise((resolve) => {
+    editRecordResolver = resolve;
   });
 }
 
@@ -1189,6 +1294,88 @@ function formatBackupTimestamp(dateValue) {
   const min = String(date.getMinutes()).padStart(2, "0");
   const s = String(date.getSeconds()).padStart(2, "0");
   return `${y}-${m}-${d}_${h}${min}${s}`;
+}
+
+function parseStoredBackupValue(rawValue) {
+  if (typeof rawValue !== "string") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return rawValue;
+  }
+}
+
+function buildBackupRowsFromLocalData(data) {
+  const backupTimestamp = new Date().toISOString();
+
+  return Object.entries(data || {}).flatMap(([key, value]) => {
+    if ((key === STORAGE_KEY || key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) && Array.isArray(value)) {
+      return [{
+        id: key,
+        payload: value,
+        updatedAt: backupTimestamp,
+      }];
+    }
+    return [];
+  });
+}
+
+function collectComprehensiveLocalBackup() {
+  const data = {};
+
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = String(localStorage.key(index) || "");
+      if (!key.startsWith("mgi_")) {
+        continue;
+      }
+
+      const rawValue = localStorage.getItem(key);
+      if (rawValue === null) {
+        continue;
+      }
+
+      data[key] = parseStoredBackupValue(rawValue);
+    }
+  } catch {
+    return { data: {}, rows: [] };
+  }
+
+  return {
+    data,
+    rows: buildBackupRowsFromLocalData(data),
+  };
+}
+
+function restoreComprehensiveLocalBackup(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return 0;
+  }
+
+  let restoredCount = 0;
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (!key.startsWith("mgi_")) {
+      return;
+    }
+
+    try {
+      localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+      restoredCount += 1;
+    } catch {
+      return;
+    }
+  });
+
+  renderAddressSuggestions();
+  if (Object.prototype.hasOwnProperty.call(data, THEME_KEY)) {
+    applyTheme(String(data[THEME_KEY] || "black"));
+  }
+
+  return restoredCount;
 }
 
 function downloadJsonFile(fileName, payload) {
@@ -1629,11 +1816,18 @@ function getWeeklyRunningState(record, referenceDate = getInterestReferenceDate(
     outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
     const amountPaid = Math.max(0, Number(item.amount || 0));
+    const appliedAmount = Math.max(0, Number(item.appliedAmount || 0));
+    const isPrincipalOnlyPayment = String(item.paymentMode || "").trim() === PAYMENT_MODE_PRINCIPAL_ONLY;
     const interestOutstanding = Math.max(0, outstandingBalance - principalBalance);
-    const interestPaid = Math.min(amountPaid, interestOutstanding);
-    const principalPaid = Math.min(principalBalance, Math.max(0, amountPaid - interestPaid));
+    const interestPaid = isPrincipalOnlyPayment ? 0 : Math.min(amountPaid, interestOutstanding);
+    const principalPaid = isPrincipalOnlyPayment
+      ? Math.min(principalBalance, amountPaid)
+      : Math.min(principalBalance, Math.max(0, amountPaid - interestPaid));
 
-    outstandingBalance = Math.max(0, outstandingBalance - amountPaid);
+    const outstandingApplied = isPrincipalOnlyPayment
+      ? (appliedAmount > 0 ? appliedAmount : principalPaid)
+      : amountPaid;
+    outstandingBalance = Math.max(0, outstandingBalance - outstandingApplied);
     principalBalance = Math.max(0, principalBalance - principalPaid);
     lastCycle = paymentCycles;
   }
@@ -1769,6 +1963,22 @@ function computeOtherArrearsAmount(record) {
   return otherArrears;
 }
 
+function getRebateAmount(record) {
+  const rebate = Number(record?.manualRebateAmount ?? 0);
+  if (!Number.isFinite(rebate) || rebate <= 0) {
+    return 0;
+  }
+  return rebate;
+}
+
+function getRebatedOutstandingAmount(record, outstandingBalance = computeRemainingPayable(record)) {
+  return Math.max(0, Number(outstandingBalance || 0) - getRebateAmount(record));
+}
+
+function getRebateDate(record) {
+  return String(record?.manualRebateDate || "").trim();
+}
+
 function computeCurrentTotalPayable(record) {
   const baseTotal = computeBaseTotalPayable(record);
   return baseTotal + computeArrearsAmount(record) + computeOtherArrearsAmount(record);
@@ -1895,7 +2105,13 @@ function applyCompoundedPeriodicInterest(balance, periodicRate, periods) {
   return balance * Math.pow(1 + periodicRate, periods);
 }
 
-function computeRemainingPayable(record) {
+function computeRemainingPayableValue(record, options = {}) {
+  const treatSettledAsZero = options.treatSettledAsZero !== false;
+
+  if (treatSettledAsZero && isSettledRecord(record)) {
+    return 0;
+  }
+
   if (isWeeklyFixedLoan(record.payableWithin)) {
     return getWeeklyRunningBalance(record);
   }
@@ -1951,6 +2167,10 @@ function computeRemainingPayable(record) {
   const grossPayable = computeBaseTotalPayable(record);
   const totalPaid = getTotalPaidAmount(record);
   return Math.max(0, grossPayable - totalPaid);
+}
+
+function computeRemainingPayable(record) {
+  return computeRemainingPayableValue(record);
 }
 
 function getPaymentHistory(record) {
@@ -2011,7 +2231,7 @@ function updateRowSaveButtonStates(rowIndex) {
     collectibleBtn instanceof HTMLButtonElement
   ) {
     const inputCollectible = parseAmount(collectibleInput.value || "0");
-    const savedCollectible = computeCollectibleAmount(record);
+    const savedCollectible = computeBaseCollectibleAmount(record);
     const savedPeriod = getCollectiblePeriodForRecord(record);
     setButtonUnsavedState(
       collectibleBtn,
@@ -2029,7 +2249,7 @@ function updateRowSaveButtonStates(rowIndex) {
   ) {
     const inputAmount = parseAmount(weeklyAmountInput.value || "0");
     const inputCollectible = parseAmount(collectibleInput.value || "0");
-    const savedCollectible = computeCollectibleAmount(record);
+    const savedCollectible = computeBaseCollectibleAmount(record);
     const savedPeriod = getCollectiblePeriodForRecord(record);
     setButtonUnsavedState(
       weeklySettingsBtn,
@@ -2076,6 +2296,17 @@ function updateRowSaveButtonStates(rowIndex) {
   if (remarksInput instanceof HTMLInputElement && remarksBtn instanceof HTMLButtonElement) {
     const savedRemarks = String(record.remarks || "").trim();
     setButtonUnsavedState(remarksBtn, remarksInput.value.trim() !== savedRemarks);
+  }
+
+  const rebateInput = body.querySelector(`.rebate-input[data-index="${rowIndex}"]`);
+  const rebateBtn = body.querySelector(`.save-rebate-btn[data-index="${rowIndex}"]`);
+  if (rebateInput instanceof HTMLInputElement && rebateBtn instanceof HTMLButtonElement) {
+    const outstandingBalance = computeRemainingPayable(record);
+    const savedRebatedAmount = getRebatedOutstandingAmount(record, outstandingBalance);
+    setButtonUnsavedState(
+      rebateBtn,
+      amountsDiffer(parseAmount(rebateInput.value || "0"), savedRebatedAmount)
+    );
   }
 }
 
@@ -2243,11 +2474,43 @@ function toggleRemarksEditor(rowIndex, forceOpen = false) {
   }
 }
 
+function toggleRebateEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  if (forceOpen && Number.isInteger(openRebateEditorRowIndex) && openRebateEditorRowIndex >= 0 && openRebateEditorRowIndex !== rowIndex) {
+    const previousEditor = body.querySelector(`.rebate-editor[data-index="${openRebateEditorRowIndex}"]`);
+    if (previousEditor instanceof HTMLElement) {
+      previousEditor.classList.add("rebate-editor-hidden");
+    }
+  }
+
+  const editor = body.querySelector(`.rebate-editor[data-index="${rowIndex}"]`);
+  if (!(editor instanceof HTMLElement)) {
+    return;
+  }
+
+  const currentlyOpen = !editor.classList.contains("rebate-editor-hidden");
+  const shouldOpen = forceOpen ? true : !currentlyOpen;
+  editor.classList.toggle("rebate-editor-hidden", !shouldOpen);
+  openRebateEditorRowIndex = shouldOpen ? rowIndex : (openRebateEditorRowIndex === rowIndex ? -1 : openRebateEditorRowIndex);
+
+  if (shouldOpen) {
+    const input = editor.querySelector(`.rebate-input[data-index="${rowIndex}"]`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.select();
+    }
+  }
+}
+
 function hasOpenInlineEditor() {
   return (
     (Number.isInteger(openArrearsEditorRowIndex) && openArrearsEditorRowIndex >= 0) ||
     (Number.isInteger(openOtherArrearsEditorRowIndex) && openOtherArrearsEditorRowIndex >= 0) ||
     (Number.isInteger(openRemarksEditorRowIndex) && openRemarksEditorRowIndex >= 0) ||
+    (Number.isInteger(openRebateEditorRowIndex) && openRebateEditorRowIndex >= 0) ||
     Boolean(body?.querySelector(".collectible-editor:not(.collectible-editor-hidden)"))
   );
 }
@@ -2326,6 +2589,14 @@ function getVisibleRecords(records) {
       return { record, index, dueDate, effectiveDueDate, isPastDue, daysPastDue };
     })
     .filter((row) => {
+      if (isSettledDashboardView) {
+        if (!isSettledRecord(row.record)) {
+          return false;
+        }
+      } else if (isSettledRecord(row.record)) {
+        return false;
+      }
+
       const rowName = String(row.record.name || "").toLowerCase();
       if (nameFilter && !rowName.includes(nameFilter)) {
         return false;
@@ -2415,6 +2686,7 @@ async function exportVisibleRecords() {
       <th>Address</th>
       <th>Contact Number</th>
       <th>Amount Collectible</th>
+      <th>Amount Paid</th>
       <th>Arrears</th>
       <th>Other Arrears</th>
       <th>Co-maker</th>
@@ -2433,6 +2705,7 @@ async function exportVisibleRecords() {
           <td>${sanitize(String(record.address || ""))}</td>
           <td>${sanitize(String(record.contactNumber || ""))}</td>
           <td>${formatCurrency(collectibleAmount)}</td>
+          <td></td>
           <td>${formatPlainAmount(arrearsAmount)}</td>
           <td>${formatPlainAmount(otherArrearsAmount)}</td>
           <td>${sanitize(String(record.coMaker || ""))}</td>
@@ -2581,6 +2854,8 @@ async function exportVisibleRecords() {
 }
 
 async function downloadFullBackup() {
+  const localBackup = collectComprehensiveLocalBackup();
+
   try {
     const res = await fetchBackupApi();
     if (!res.ok) {
@@ -2605,44 +2880,41 @@ async function downloadFullBackup() {
         mode: "server-full",
         exportedAt,
         totalKeys: rows.length,
+        localKeys: Object.keys(localBackup.data).length,
       },
+      backupHash: typeof payload?.backupHash === "string" ? payload.backupHash : "",
       rows,
+      data: localBackup.data,
     };
 
     downloadJsonFile(`mgi_backup_${formatBackupTimestamp(new Date())}.json`, backupFile);
-    showToast("Backup downloaded", "success");
+    showToast("Full backup downloaded", "success");
     setBackupStatusNote("ok", "Backup status: full backup available");
   } catch (error) {
     console.error("[backup] export failed", error);
 
-    // Fallback backup from currently loaded records so user still gets a downloadable copy.
-    const localRows = getRecords();
-    if (Array.isArray(localRows) && localRows.length > 0) {
+    if (localBackup.rows.length > 0 || Object.keys(localBackup.data).length > 0) {
       const fallbackBackup = {
         meta: {
           source: "mgi-cs-system",
           mode: "client-fallback",
           exportedAt: new Date().toISOString(),
-          warning: "Server backup unavailable. This file contains only currently loaded main dashboard records.",
-          totalKeys: 1,
+          warning: "Server backup unavailable. This file contains all currently available MGI local data.",
+          totalKeys: localBackup.rows.length,
+          localKeys: Object.keys(localBackup.data).length,
         },
-        rows: [
-          {
-            id: STORAGE_KEY,
-            payload: localRows,
-            updatedAt: new Date().toISOString(),
-          },
-        ],
+        rows: localBackup.rows,
+        data: localBackup.data,
       };
 
       downloadJsonFile(`mgi_backup_local_${formatBackupTimestamp(new Date())}.json`, fallbackBackup);
-      showMessage("Server backup unavailable. Downloaded local backup instead.", "error");
+      showMessage("Server backup unavailable. Downloaded full local system backup instead.", "error");
       showToast("Local backup downloaded", "success");
       setBackupStatusNote("warning", "Backup status: local-only fallback mode");
       return;
     }
 
-    showMessage("Backup failed. Server backup is unavailable and no local records are loaded.", "error");
+    showMessage("Backup failed. Server backup is unavailable and no local backup data is available.", "error");
     showToast("Backup failed", "error");
     setBackupStatusNote("warning", "Backup status: backup unavailable");
   }
@@ -2656,9 +2928,13 @@ async function restoreBackupFromFile(file) {
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
-    if (rows.length === 0) {
-      showMessage("Invalid backup file: rows are missing.", "error");
+    const localBackupData = parsed?.data && typeof parsed.data === "object" && !Array.isArray(parsed.data)
+      ? parsed.data
+      : null;
+    const rows = Array.isArray(parsed?.rows) ? parsed.rows : buildBackupRowsFromLocalData(localBackupData || {});
+
+    if (rows.length === 0 && !localBackupData) {
+      showMessage("Invalid backup file: no restorable data found.", "error");
       showToast("Restore failed", "error");
       return;
     }
@@ -2671,31 +2947,39 @@ async function restoreBackupFromFile(file) {
     }
 
     const confirmed = window.confirm(
-      `Restore backup with ${rows.length} key(s)?\n\nThis will replace current server data with the backup snapshot.`
+      `Restore full system backup with ${rows.length} server key(s) and ${Object.keys(localBackupData || {}).length} local key(s)?\n\nThis will replace current server data with the backup snapshot.`
     );
     if (!confirmed) {
       return;
     }
 
-    const res = await postBackupImportApi({ rows, replace: true });
-    if (!res.ok) {
-      let detail = "";
-      try {
-        const body = await res.json();
-        detail = body?.detail || body?.error || "";
-      } catch {
+    if (rows.length > 0) {
+      const res = await postBackupImportApi({
+        rows,
+        replace: true,
+        backupHash: typeof parsed?.backupHash === "string" ? parsed.backupHash : undefined,
+      });
+      if (!res.ok) {
+        let detail = "";
         try {
-          detail = (await res.text()).slice(0, 200);
-        } catch {}
+          const body = await res.json();
+          detail = body?.detail || body?.error || "";
+        } catch {
+          try {
+            detail = (await res.text()).slice(0, 200);
+          } catch {}
+        }
+        throw new Error(`Restore failed (${res.status})${detail ? `: ${detail}` : ""}`);
       }
-      throw new Error(`Restore failed (${res.status})${detail ? `: ${detail}` : ""}`);
     }
+
+    restoreComprehensiveLocalBackup(localBackupData);
 
     await loadRecordsFromServer();
     renderRecords();
     await refreshBackupHealthStatus();
-    showMessage("Backup restored successfully.", "success");
-    showToast("Restore complete", "success");
+    showMessage("Full system backup restored successfully.", "success");
+    showToast("Full restore complete", "success");
   } catch (error) {
     console.error("[backup] restore failed", error);
     showMessage("Backup restore failed. Check backup file and server status.", "error");
@@ -2718,19 +3002,23 @@ async function exportStatementOfAccount(record) {
   const otherArrearsType = record.otherArrearsType === "Principal" ? "Principal" : "Interest";
   const totalPaidAmount = getTotalPaidAmount(record);
   const totalPayable = computeCurrentTotalPayable(record);
-  const outstandingBalance = computeRemainingPayable(record);
+  const outstandingBalance = computeRemainingPayableValue(record, { treatSettledAsZero: false });
+  const rebateAmount = getRebateAmount(record);
+  const rebateDate = getRebateDate(record);
+  const rebatedOutstandingAmount = getRebatedOutstandingAmount(record, outstandingBalance);
   const paymentHistory = getPaymentHistory(record);
   const currentBalance = outstandingBalance;
   const printableRemarks = String(record.remarks || "").trim() || "No remarks";
   const hasCoMaker = Boolean(String(record.coMaker || "").trim());
 
   let runningBalanceAfterPayment = currentBalance;
-  const transactionHistoryRows = paymentHistory.length
+  const paymentTransactionRows = paymentHistory.length
     ? [...paymentHistory]
         .map((item) => {
           const amountPaid = Number(item.amount || 0);
+          const appliedAmount = Number(item.appliedAmount || amountPaid);
           const balanceAfterPayment = runningBalanceAfterPayment;
-          const balanceBeforePayment = Math.max(0, balanceAfterPayment + amountPaid);
+          const balanceBeforePayment = Math.max(0, balanceAfterPayment + appliedAmount);
           runningBalanceAfterPayment = balanceBeforePayment;
           return {
             date: item.date,
@@ -2759,6 +3047,19 @@ async function exportStatementOfAccount(record) {
               <td>${formatCurrency(currentBalance)}</td>
             </tr>
       `;
+
+  const rebateTransactionRow = rebateAmount > 0
+    ? `
+            <tr>
+              <td>${sanitize(formatLongDate(rebateDate || toIsoDate(getReferenceDate())))}</td>
+              <td>${formatCurrency(outstandingBalance)}</td>
+              <td>${formatCurrency(rebatedOutstandingAmount)}</td>
+              <td>Rebate: ${formatCurrency(rebateAmount)}</td>
+            </tr>
+      `
+    : "";
+
+  const transactionHistoryRows = `${paymentTransactionRows}${rebateTransactionRow}`;
 
   const coMakerDetailsRows = hasCoMaker
     ? `
@@ -3018,6 +3319,12 @@ async function exportStatementOfAccount(record) {
               <td>${paymentHistory.length}</td>
             </tr>
             <tr>
+              <td class="details-label">Rebate</td>
+              <td>${formatPlainAmount(rebateAmount)}</td>
+              <td class="details-label">Adjusted Balance</td>
+              <td>${formatPlainAmount(rebateAmount > 0 ? rebatedOutstandingAmount : outstandingBalance)}</td>
+            </tr>
+            <tr>
               <td class="details-label">Remarks</td>
               <td>${sanitize(printableRemarks)}</td>
               <td class="details-label">Purpose of Loan</td>
@@ -3119,7 +3426,7 @@ function closeWriteOffModal(result) {
   }
 }
 
-function requestWriteOffPassword(actionLabel = "Write-Off") {
+function requestWriteOffPassword(actionLabel = "Write-Off", customDescription = "") {
   if (!writeOffModal || !writeOffPasswordInput) {
     const fallback = window.prompt(`Enter password to confirm ${actionLabel}:`);
     return Promise.resolve(fallback);
@@ -3134,9 +3441,9 @@ function requestWriteOffPassword(actionLabel = "Write-Off") {
     writeOffConfirmBtn.textContent = `Confirm ${mode}`;
   }
   if (writeOffDescription) {
-    writeOffDescription.textContent = isHatag
+    writeOffDescription.textContent = customDescription || (isHatag
       ? "Enter password to activate Hatag-Hatag and freeze interest growth."
-      : "Enter password to activate write-off and freeze interest growth.";
+      : "Enter password to activate write-off and freeze interest growth.");
   }
 
   if (writeOffError) {
@@ -3170,11 +3477,15 @@ function openPaymentHistoryModal(record, paymentHistory) {
   }
 
   const isHatagMode = isHatagHatagActive(record);
+  const rebateAmount = getRebateAmount(record);
+  const rebateDate = getRebateDate(record);
+  const outstandingBalance = computeRemainingPayableValue(record, { treatSettledAsZero: false });
+  const rebatedOutstandingAmount = getRebatedOutstandingAmount(record, outstandingBalance);
   if (paymentHistoryTitle) {
     paymentHistoryTitle.textContent = `Payment History - ${record.name}`;
   }
 
-  if (paymentHistory.length === 0) {
+  if (paymentHistory.length === 0 && rebateAmount <= 0) {
     paymentHistoryContent.innerHTML = '<p class="payment-history-empty">No payment history yet.</p>';
     paymentHistoryModal.classList.add("show");
     paymentHistoryModal.setAttribute("aria-hidden", "false");
@@ -3206,6 +3517,20 @@ function openPaymentHistoryModal(record, paymentHistory) {
     })
     .join("");
 
+  const rebateRow = rebateAmount > 0
+    ? `
+        <div class="payment-history-row">
+          <span><span class="pill">REBATE</span></span>
+          <span>${sanitize(formatLongDate(rebateDate || toIsoDate(getReferenceDate())))}</span>
+          <span>${formatCurrency(rebatedOutstandingAmount)}</span>
+          <span></span>
+          <span></span>
+        </div>
+      `
+    : "";
+
+  const totalPaidDisplay = totalPaid + (rebateAmount > 0 ? rebatedOutstandingAmount : 0);
+
   paymentHistoryContent.innerHTML = `
     <div class="payment-history-grid">
       <div class="payment-history-row payment-history-row--head">
@@ -3216,8 +3541,10 @@ function openPaymentHistoryModal(record, paymentHistory) {
         <span>I (Interest)</span>
       </div>
       ${rows}
+      ${rebateRow}
     </div>
-    <div class="payment-history-total">Total Paid: <strong>${formatCurrency(totalPaid)}</strong></div>
+    <div class="payment-history-total">Total Paid: <strong>${formatCurrency(totalPaidDisplay)}</strong></div>
+    ${rebateAmount > 0 ? `<div class="payment-history-total">Rebate: <strong>${formatCurrency(rebateAmount)}</strong></div>` : ""}
   `;
 
   paymentHistoryModal.classList.add("show");
@@ -3232,6 +3559,7 @@ function closePaymentEntryModal() {
   paymentEntryModal.classList.remove("show");
   paymentEntryModal.setAttribute("aria-hidden", "true");
   paymentEntryRowIndex = -1;
+  paymentEntryMode = PAYMENT_MODE_REGULAR;
 
   if (paymentEntryInput) {
     paymentEntryInput.value = "";
@@ -3244,10 +3572,11 @@ function closePaymentEntryModal() {
   }
 }
 
-function openPaymentConfirmModal(rowIndex, amount) {
-  pendingPaymentConfirm = { rowIndex, amount };
+function openPaymentConfirmModal(rowIndex, amount, paymentMode = PAYMENT_MODE_REGULAR) {
+  pendingPaymentConfirm = { rowIndex, amount, paymentMode };
+  const actionLabel = paymentMode === PAYMENT_MODE_PRINCIPAL_ONLY ? "principal-only payment" : "payment";
   if (paymentConfirmText) {
-    paymentConfirmText.textContent = `Confirm payment of ${formatCurrency(amount)}?`;
+    paymentConfirmText.textContent = `Confirm ${actionLabel} of ${formatCurrency(amount)}?`;
   }
   if (paymentConfirmAmount) {
     paymentConfirmAmount.textContent = formatCurrency(amount);
@@ -3275,18 +3604,26 @@ function updatePaymentEntryPreview() {
   }
 
   const amount = parseAmount(paymentEntryInput?.value || "0");
-  const allocation = splitPaymentAmount(record, amount);
+  const allocation = paymentEntryMode === PAYMENT_MODE_PRINCIPAL_ONLY
+    ? {
+        interestPaid: 0,
+        principalPaid: Math.min(Math.max(0, amount), getOutstandingBreakdown(record).principalOutstanding),
+      }
+    : splitPaymentAmount(record, amount);
   paymentEntryPreview.textContent = `Applied: Interest ${formatCurrency(allocation.interestPaid)} | Principal ${formatCurrency(allocation.principalPaid)}`;
 }
 
-function openPaymentEntryModal(rowIndex, record) {
+function openPaymentEntryModal(rowIndex, record, mode = PAYMENT_MODE_REGULAR) {
   if (!paymentEntryModal || !paymentEntryInput) {
     return;
   }
 
   paymentEntryRowIndex = rowIndex;
+  paymentEntryMode = mode === PAYMENT_MODE_PRINCIPAL_ONLY ? PAYMENT_MODE_PRINCIPAL_ONLY : PAYMENT_MODE_REGULAR;
   if (paymentEntrySubtitle) {
-    paymentEntrySubtitle.textContent = `Borrower: ${record.name}`;
+    paymentEntrySubtitle.textContent = paymentEntryMode === PAYMENT_MODE_PRINCIPAL_ONLY
+      ? `Borrower: ${record.name} (Principal only)`
+      : `Borrower: ${record.name}`;
   }
   paymentEntryInput.value = "";
   if (paymentEntryError) {
@@ -3303,11 +3640,12 @@ function openPaymentEntryModal(rowIndex, record) {
 
 function renderRecords() {
   const records = getRecords();
+  const viewRecords = getRecordsForCurrentDashboardView(records);
   const rows = getVisibleRecords(records);
   const activeFilters = getActiveFilterSnapshot();
   updateReleasedSummaryStats();
   console.debug("[render][main] Rendering records", {
-    totalRecords: records.length,
+    totalRecords: viewRecords.length,
     visibleRows: rows.length,
     filters: {
       name: activeFilters.name,
@@ -3321,21 +3659,25 @@ function renderRecords() {
 
   const filtersSummary = `name=${activeFilters.name || "(none)"}, granted=${activeFilters.dateGranted || "(none)"}, due=${activeFilters.dueDate || "(none)"}, payable=${activeFilters.payable || "(none)"}, sort=${activeFilters.sortBy}`;
 
-  if (records.length === 0) {
-    setDiagnosticsPanel("warning", "No records found in server database yet.", latestSyncIssue || filtersSummary);
+  if (viewRecords.length === 0) {
+    setDiagnosticsPanel(
+      "warning",
+      isSettledDashboardView ? "No settled accounts found yet." : "No records found in server database yet.",
+      latestSyncIssue || filtersSummary
+    );
   }
 
   if (rows.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">No records yet.</td></tr>';
+    body.innerHTML = `<tr><td colspan="6" class="empty">${isSettledDashboardView ? "No settled accounts yet." : "No records yet."}</td></tr>`;
     const hasActiveFilter = hasActiveFilters(activeFilters);
 
-    if (records.length > 0 && hasActiveFilter) {
+    if (viewRecords.length > 0 && hasActiveFilter) {
       setDiagnosticsPanel(
         "error",
         "Records exist but current filters hide them.",
         `Tip: click Reset Filters. Active filters: ${filtersSummary}`
       );
-    } else if (records.length > 0) {
+    } else if (viewRecords.length > 0) {
       setDiagnosticsPanel(
         "warning",
         "Records exist but nothing is currently visible.",
@@ -3353,7 +3695,8 @@ function renderRecords() {
         const payDate = effectiveDueDate;
         const totalPaidAmount = getTotalPaidAmount(record);
         const paymentHistory = getPaymentHistory(record);
-        const collectibleAmount = computeCollectibleAmount(record);
+        const baseCollectibleAmount = computeBaseCollectibleAmount(record);
+        const collectibleAmount = baseCollectibleAmount + computeArrearsAmount(record) + computeOtherArrearsAmount(record);
         const collectiblePeriod = getCollectiblePeriodForRecord(record);
         const arrearsAmount = computeArrearsAmount(record);
         const otherArrearsAmount = computeOtherArrearsAmount(record);
@@ -3364,14 +3707,29 @@ function renderRecords() {
         const writeOffFreezeDate = String(record.writeOffDate || "").trim();
         const hatagHatagActive = isHatagHatagActive(record);
         const hatagHatagDate = String(record.hatagHatagDate || "").trim();
+        const settledActive = isSettledRecord(record);
+        const settledDate = String(record.settledDate || "").trim();
         const escapedRemarks = sanitize(record.remarks || "");
         const paymentCount = paymentHistory.length;
+        const outstandingBalance = computeRemainingPayable(record);
+        const rebateAmount = getRebateAmount(record);
+        const rebatedOutstandingAmount = getRebatedOutstandingAmount(record, outstandingBalance);
+        const displayedOutstandingBalance = outstandingBalance;
         return `
       <tr class="${isPastDue ? "past-due-row" : ""}">
         <td>
-          <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
-          <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
-          <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+          <div class="borrower-name-row">
+            <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
+            <button type="button" class="btn-secondary borrower-edit-btn edit-name-btn" data-index="${index}">Edit</button>
+          </div>
+          <div class="borrower-contact-row">
+            <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
+            <button type="button" class="btn-secondary borrower-edit-btn edit-contact-btn" data-index="${index}">Edit</button>
+          </div>
+          <div class="borrower-address-row">
+            <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+            <button type="button" class="btn-secondary borrower-edit-btn edit-address-btn" data-index="${index}">Edit</button>
+          </div>
         </td>
         <td>
           <div class="loan-info-purpose"><b>Purpose of Loan:</b> ${sanitize(String(record.purposeOfLoan || "-"))}</div>
@@ -3392,7 +3750,7 @@ function renderRecords() {
           <button type="button" class="btn-secondary collectible-display-btn" data-index="${index}">${formatCurrency(collectibleAmount)}/${getCollectibleLabelForRecord(record)}</button>
           ${isPastDue ? `<small class="mini-note past-due-note">Past Due (${daysPastDue} day${daysPastDue === 1 ? "" : "s"})</small>` : ""}
           <div class="paid-controls collectible-editor collectible-editor-hidden" data-index="${index}">
-            <input type="text" class="collectible-edit-input" data-index="${index}" value="${addCommas(formatPlainAmount(collectibleAmount))}" inputmode="decimal" autocomplete="off" />
+            <input type="text" class="collectible-edit-input" data-index="${index}" value="${addCommas(formatPlainAmount(baseCollectibleAmount))}" inputmode="decimal" autocomplete="off" />
             <select class="collectible-period-select" data-index="${index}">
               <option value="Daily" ${collectiblePeriod === "Daily" ? "selected" : ""}>Daily</option>
               <option value="Weekly" ${collectiblePeriod === "Weekly" ? "selected" : ""}>Weekly</option>
@@ -3401,8 +3759,9 @@ function renderRecords() {
             </select>
             <button type="button" class="btn-secondary save-collectible-btn" data-index="${index}">Save</button>
           </div>
-          ${
-            isWriteOffActive
+          ${settledActive
+            ? `<small class="mini-note settled-note">Settled on ${sanitize(formatLongDate(settledDate || toIsoDate(getReferenceDate())))}</small>`
+            : isWriteOffActive
               ? `<small class="mini-note">Write-Off active since ${sanitize(formatLongDate(writeOffFreezeDate))}</small>`
               : hatagHatagActive
                 ? `<small class="mini-note">Hatag-Hatag active since ${sanitize(formatLongDate(hatagHatagDate))}</small>`
@@ -3442,19 +3801,29 @@ function renderRecords() {
         </td>
         <td class="outstanding-balance-cell">
           <span class="mobile-field-label">Outstanding Balance</span>
-          <span class="outstanding-balance-value">${formatCurrency(computeRemainingPayable(record))}</span>
+          <span class="outstanding-balance-value">${formatCurrency(displayedOutstandingBalance)}</span>
+          <div class="outstanding-btn-row">
+            <button type="button" class="btn-secondary rebate-display-btn" data-index="${index}">Rebate</button>
+            ${settledActive ? "" : `<button type="button" class="btn-secondary pay-principal-only-btn" data-index="${index}" ${hatagHatagActive ? "disabled" : ""}>Pay Principal Only</button>`}
+          </div>
+          <div class="paid-controls rebate-editor ${openRebateEditorRowIndex === index ? "" : "rebate-editor-hidden"}" data-index="${index}">
+            <input type="text" class="rebate-input" data-index="${index}" value="${addCommas(formatPlainAmount(rebatedOutstandingAmount))}" inputmode="decimal" autocomplete="off" />
+            <button type="button" class="btn-secondary save-rebate-btn" data-index="${index}">Save</button>
+          </div>
+          ${rebateAmount > 0 ? `<small class="mini-note rebate-note">${formatCurrency(rebatedOutstandingAmount)} (Rebate: ${formatCurrency(rebateAmount)})</small>` : ""}
         </td>
         <td>
           <div class="remarks-controls">
-            <button type="button" class="btn-pay save-paid-btn" data-index="${index}">Pay</button>
+            ${settledActive ? "" : `<button type="button" class="btn-pay save-paid-btn" data-index="${index}">Pay</button>`}
             <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
             <button type="button" class="btn-secondary statement-btn" data-index="${index}">Statement of Account</button>
-            <button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${
+            ${settledActive ? "" : `<button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${
               isWriteOffActive ? "Write-Off Active" : "Write-Off"
-            }</button>
-            <button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${
+            }</button>`}
+            ${settledActive ? "" : `<button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${
               hatagHatagActive ? "Hatag-Hatag Active" : "Hatag-Hatag"
-            }</button>
+            }</button>`}
+            ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}">Settle</button>`}
           </div>
         </td>
       </tr>
@@ -3464,7 +3833,25 @@ function renderRecords() {
     .join("");
 
   initializeDatePickers();
-  setDiagnosticsPanel("ok", `Showing ${rows.length} visible record${rows.length === 1 ? "" : "s"} from ${records.length} total.`, latestSyncIssue || filtersSummary);
+  setDiagnosticsPanel("ok", `Showing ${rows.length} visible record${rows.length === 1 ? "" : "s"} from ${viewRecords.length} total in this dashboard.`, latestSyncIssue || filtersSummary);
+}
+
+function applyDashboardViewState() {
+  document.body.classList.toggle("settled-dashboard-view", isSettledDashboardView);
+
+  if (recordsSectionTitle) {
+    recordsSectionTitle.textContent = isSettledDashboardView ? "Settled Accounts" : "Active Accounts";
+  }
+
+  if (toggleLoanEntryBtn) {
+    toggleLoanEntryBtn.classList.toggle("is-hidden", isSettledDashboardView);
+  }
+
+  dashboardViewLinks.forEach((link) => {
+    link.classList.toggle("drawer-link--active", link.dataset.dashboardView === currentDashboardView);
+  });
+
+  document.title = isSettledDashboardView ? "Morris Gilbert Inso - Settled Accounts" : "Morris Gilbert Inso - Credit Services";
 }
 
 function showMessage(text, type) {
@@ -3485,7 +3872,7 @@ function formatName(lastName, firstName, middleInitial) {
   const cleanLast = sanitize(lastName.trim());
   const cleanFirst = sanitize(firstName.trim());
   const cleanMiddle = sanitize(middleInitial.trim().charAt(0).toUpperCase());
-  return `${cleanLast}, ${cleanFirst}, ${cleanMiddle}.`;
+  return cleanMiddle ? `${cleanLast}, ${cleanFirst}, ${cleanMiddle}.` : `${cleanLast}, ${cleanFirst}`;
 }
 
 function updateCoMakerFieldsVisibility() {
@@ -3593,15 +3980,6 @@ form.addEventListener("submit", (event) => {
   if (!firstName) {
     missingFields.push("First Name");
   }
-  if (!middleInitial) {
-    missingFields.push("Middle Initial");
-  }
-  if (!address) {
-    missingFields.push("Address");
-  }
-  if (!contactNumber) {
-    missingFields.push("Contact Number");
-  }
   if (!purposeOfLoan) {
     missingFields.push("Purpose of Loan");
   }
@@ -3626,7 +4004,7 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  if (!/^[A-Za-z]$/.test(middleInitial)) {
+  if (middleInitial && !/^[A-Za-z]$/.test(middleInitial)) {
     showMessage("Middle Initial must be one letter.", "error");
     return;
   }
@@ -3677,17 +4055,6 @@ form.addEventListener("submit", (event) => {
   showToast("Loan record saved", "success");
 });
 
-clearBtn.addEventListener("click", () => {
-  const confirmed = window.confirm("Delete all saved records?");
-  if (!confirmed) {
-    return;
-  }
-
-  setRecords([]);
-  renderRecords();
-  showMessage("All records deleted.", "success");
-});
-
 amountInput.addEventListener("input", () => {
   const normalized = normalizeAmountInput(amountInput.value);
   amountInput.value = addCommas(normalized);
@@ -3710,7 +4077,8 @@ body.addEventListener("input", (event) => {
     target.classList.contains("weekly-amount-input") ||
     target.classList.contains("collectible-edit-input") ||
     target.classList.contains("arrears-input") ||
-    target.classList.contains("other-arrears-input");
+    target.classList.contains("other-arrears-input") ||
+    target.classList.contains("rebate-input");
 
   if (!shouldFormat) {
     return;
@@ -3753,15 +4121,141 @@ body.addEventListener("change", (event) => {
 });
 
 body.addEventListener("click", async (event) => {
+  const editNameBtn = event.target.closest(".edit-name-btn");
+  if (editNameBtn) {
+    const rowIndex = Number(editNameBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record no longer exists.", "error");
+      return;
+    }
+
+    const currentName = String(records[rowIndex].name || "").trim();
+    const updatedName = await requestRecordFieldEdit({
+      title: "Edit borrower name:",
+      label: "Borrower Name",
+      value: currentName,
+    });
+    if (updatedName === null) {
+      return;
+    }
+
+    const nextName = updatedName.trim();
+    if (!nextName) {
+      showMessage("Borrower name cannot be empty.", "error");
+      return;
+    }
+
+    records[rowIndex].name = nextName;
+    setRecords(records);
+    renderRecords();
+    showMessage("Borrower name updated.", "success");
+    showToast("Borrower name updated", "success");
+    return;
+  }
+
+  const editContactBtn = event.target.closest(".edit-contact-btn");
+  if (editContactBtn) {
+    const rowIndex = Number(editContactBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record no longer exists.", "error");
+      return;
+    }
+
+    const currentContact = String(records[rowIndex].contactNumber || "").trim();
+    const updatedContact = await requestRecordFieldEdit({
+      title: "Edit contact number:",
+      label: "Contact Number",
+      value: currentContact,
+    });
+    if (updatedContact === null) {
+      return;
+    }
+
+    const nextContact = updatedContact.trim();
+    if (!nextContact) {
+      showMessage("Contact number cannot be empty.", "error");
+      return;
+    }
+
+    records[rowIndex].contactNumber = nextContact;
+    setRecords(records);
+    renderRecords();
+    showMessage("Contact number updated.", "success");
+    showToast("Contact number updated", "success");
+    return;
+  }
+
+  const editAddressBtn = event.target.closest(".edit-address-btn");
+  if (editAddressBtn) {
+    const rowIndex = Number(editAddressBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record no longer exists.", "error");
+      return;
+    }
+
+    const currentAddress = String(records[rowIndex].address || "").trim();
+    const updatedAddress = await requestRecordFieldEdit({
+      title: "Edit address:",
+      label: "Address",
+      value: currentAddress,
+    });
+    if (updatedAddress === null) {
+      return;
+    }
+
+    const nextAddress = updatedAddress.trim();
+    if (!nextAddress) {
+      showMessage("Address cannot be empty.", "error");
+      return;
+    }
+
+    records[rowIndex].address = nextAddress;
+    setRecords(records);
+    saveAddressSuggestions(nextAddress);
+    renderRecords();
+    showMessage("Address updated.", "success");
+    showToast("Address updated", "success");
+    return;
+  }
+
   const saveArrearsFromEditor = event.target.closest(".save-arrears-btn");
   const saveOtherArrearsFromEditor = event.target.closest(".save-other-arrears-btn");
   const saveRemarksFromEditor = event.target.closest(".save-remarks-btn");
+  const saveRebateFromEditor = event.target.closest(".save-rebate-btn");
   if (
-    (event.target.closest(".arrears-editor") || event.target.closest(".other-arrears-editor") || event.target.closest(".remarks-editor")) &&
+    (event.target.closest(".arrears-editor") || event.target.closest(".other-arrears-editor") || event.target.closest(".remarks-editor") || event.target.closest(".rebate-editor")) &&
     !saveArrearsFromEditor &&
     !saveOtherArrearsFromEditor &&
-    !saveRemarksFromEditor
+    !saveRemarksFromEditor &&
+    !saveRebateFromEditor
   ) {
+    return;
+  }
+
+  const rebateDisplayBtn = event.target.closest(".rebate-display-btn");
+  if (rebateDisplayBtn) {
+    const rowIndex = Number(rebateDisplayBtn.dataset.index);
+    if (Number.isInteger(rowIndex)) {
+      toggleRebateEditor(rowIndex);
+    }
     return;
   }
 
@@ -3959,17 +4453,10 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    const arrearsTotal = computeArrearsAmount(records[rowIndex]) + computeOtherArrearsAmount(records[rowIndex]);
-    const baseCollectible = updatedCollectible - arrearsTotal;
-    if (!Number.isFinite(baseCollectible) || baseCollectible < 0) {
-      showMessage("Collectible must be at least the total arrears amount.", "error");
-      return;
-    }
-
-    records[rowIndex].collectibleAmountOverride = baseCollectible;
+    records[rowIndex].collectibleAmountOverride = updatedCollectible;
     records[rowIndex].collectiblePeriodOverride = selectedPeriod;
     if (isWeeklyFixedLoan(records[rowIndex].payableWithin)) {
-      records[rowIndex].weeklyOutstandingBalance = baseCollectible;
+      records[rowIndex].weeklyOutstandingBalance = updatedCollectible;
       records[rowIndex].weeklyPrincipalBalance = Number(records[rowIndex].amount || 0);
       records[rowIndex].weeklyPaymentCycles = getWeeklyInterestPeriods(records[rowIndex]);
     }
@@ -4016,17 +4503,10 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    const arrearsTotal = computeArrearsAmount(records[rowIndex]) + computeOtherArrearsAmount(records[rowIndex]);
-    const baseCollectible = updatedCollectible - arrearsTotal;
-    if (!Number.isFinite(baseCollectible) || baseCollectible < 0) {
-      showMessage("Weekly collectible must be at least the total arrears amount.", "error");
-      return;
-    }
-
     records[rowIndex].amount = updatedAmount;
-    records[rowIndex].collectibleAmountOverride = baseCollectible;
+    records[rowIndex].collectibleAmountOverride = updatedCollectible;
     records[rowIndex].collectiblePeriodOverride = selectedPeriod;
-    records[rowIndex].weeklyOutstandingBalance = baseCollectible;
+    records[rowIndex].weeklyOutstandingBalance = updatedCollectible;
     records[rowIndex].weeklyPrincipalBalance = updatedAmount;
     records[rowIndex].weeklyPaymentCycles = getWeeklyInterestPeriods(records[rowIndex]);
     setRecords(records);
@@ -4056,6 +4536,44 @@ body.addEventListener("click", async (event) => {
     showMessage("Remarks saved.", "success");
     showToast("Remarks saved", "success");
     toggleRemarksEditor(rowIndex, false);
+    return;
+  }
+
+  const saveRebateBtn = event.target.closest(".save-rebate-btn");
+  if (saveRebateBtn) {
+    const rowIndex = Number(saveRebateBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const input = body.querySelector(`.rebate-input[data-index="${rowIndex}"]`);
+    const rebatedAmount = parseAmount(input instanceof HTMLInputElement ? input.value : "0");
+    if (!Number.isFinite(rebatedAmount) || rebatedAmount <= 0) {
+      showMessage("Rebated amount must be greater than 0.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record no longer exists.", "error");
+      return;
+    }
+
+    const outstandingBalance = computeRemainingPayable(records[rowIndex]);
+    if (rebatedAmount > outstandingBalance) {
+      showMessage("Rebated amount cannot be more than outstanding balance.", "error");
+      return;
+    }
+
+    const rebateAmount = Math.max(0, outstandingBalance - rebatedAmount);
+    records[rowIndex].manualRebateAmount = rebateAmount;
+    records[rowIndex].manualRebateDate = toIsoDate(getReferenceDate());
+    setRecords(records);
+    renderRecords();
+    showMessage(`Rebate updated: ${formatCurrency(rebateAmount)}.`, "success");
+    showToast("Rebate updated", "success");
+    toggleRebateEditor(rowIndex, false);
     return;
   }
 
@@ -4183,12 +4701,79 @@ body.addEventListener("click", async (event) => {
     return;
   }
 
+  const settleBtn = event.target.closest(".settle-btn");
+  if (settleBtn) {
+    const rowIndex = Number(settleBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record no longer exists.", "error");
+      return;
+    }
+
+    if (isSettledRecord(record)) {
+      showMessage("This account is already settled.", "success");
+      return;
+    }
+
+    const password = await requestWriteOffPassword(
+      "Settle",
+      "Enter admin password to mark this account as settled and move it to Settled Accounts."
+    );
+    if (password === null) {
+      return;
+    }
+
+    if (password.trim() !== getAdminPassword().trim()) {
+      showMessage("Invalid admin password. Settle cancelled.", "error");
+      showToast("Invalid admin password", "error");
+      return;
+    }
+
+    record.isSettled = true;
+    record.settledDate = toIsoDate(getReferenceDate());
+    setRecords(records);
+    renderRecords();
+    showMessage("Account moved to Settled Accounts.", "success");
+    showToast("Account settled", "success");
+    return;
+  }
+
   const moveDateBtn = event.target.closest(".move-date-btn");
   if (moveDateBtn) {
     const rowIndex = Number(moveDateBtn.dataset.index);
     const input = body.querySelector(`.move-date-input[data-index="${rowIndex}"]`);
     const newDate = input instanceof HTMLInputElement ? input.value : "";
     saveMoveDateForRow(rowIndex, newDate);
+    return;
+  }
+
+  const principalOnlyButton = event.target.closest(".pay-principal-only-btn");
+  if (principalOnlyButton) {
+    const rowIndex = Number(principalOnlyButton.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record no longer exists.", "error");
+      return;
+    }
+
+    if (isHatagHatagActive(record)) {
+      showMessage("Principal-only payment is unavailable while Hatag-Hatag is active.", "error");
+      return;
+    }
+
+    openPaymentEntryModal(rowIndex, record, PAYMENT_MODE_PRINCIPAL_ONLY);
     return;
   }
 
@@ -4210,11 +4795,16 @@ body.addEventListener("click", async (event) => {
     return;
   }
 
-  openPaymentEntryModal(rowIndex, record);
+  openPaymentEntryModal(rowIndex, record, PAYMENT_MODE_REGULAR);
   return;
 });
 
-function applyPaymentForRow(rowIndex, paidAmount) {
+function applyPaymentForRow(rowIndex, paidAmount, options = {}) {
+  const paymentMode = options.paymentMode === PAYMENT_MODE_PRINCIPAL_ONLY
+    ? PAYMENT_MODE_PRINCIPAL_ONLY
+    : PAYMENT_MODE_REGULAR;
+  const isPrincipalOnlyMode = paymentMode === PAYMENT_MODE_PRINCIPAL_ONLY;
+
   if (!Number.isInteger(rowIndex) || rowIndex < 0) {
     showMessage("Invalid record selected.", "error");
     return false;
@@ -4236,7 +4826,27 @@ function applyPaymentForRow(rowIndex, paidAmount) {
   }
 
   const isHatagMode = isHatagHatagActive(records[rowIndex]);
-  const paymentAllocation = splitPaymentAmount(records[rowIndex], paidAmount);
+  if (isHatagMode && isPrincipalOnlyMode) {
+    showMessage("Principal-only payment is unavailable while Hatag-Hatag is active.", "error");
+    return false;
+  }
+
+  const outstandingBreakdown = getOutstandingBreakdown(records[rowIndex]);
+  const principalOnlyPaid = Math.min(Math.max(0, paidAmount), outstandingBreakdown.principalOutstanding);
+  const principalOnlyAppliedAmount = outstandingBreakdown.principalOutstanding > 0
+    ? Math.min(
+        outstandingBreakdown.outstandingBalance,
+        (outstandingBreakdown.outstandingBalance / outstandingBreakdown.principalOutstanding) * principalOnlyPaid
+      )
+    : 0;
+  const paymentAllocation = isPrincipalOnlyMode
+    ? {
+        ...outstandingBreakdown,
+        interestPaid: 0,
+        principalPaid: principalOnlyPaid,
+        appliedAmount: principalOnlyAppliedAmount,
+      }
+    : splitPaymentAmount(records[rowIndex], paidAmount);
   if (!isHatagMode && paymentAllocation.appliedAmount <= 0) {
     const noInterestMessage = isHatagHatagActive(records[rowIndex])
       ? "No outstanding interest to pay in Hatag-Hatag mode."
@@ -4244,13 +4854,18 @@ function applyPaymentForRow(rowIndex, paidAmount) {
     showMessage(noInterestMessage, "error");
     return false;
   }
-  if (!isHatagMode && paidAmount > paymentAllocation.outstandingBalance) {
+  if (!isHatagMode && !isPrincipalOnlyMode && paidAmount > paymentAllocation.outstandingBalance) {
     showMessage("Payment cannot exceed the outstanding balance.", "error");
+    return false;
+  }
+  if (isPrincipalOnlyMode && paidAmount > paymentAllocation.principalOutstanding) {
+    showMessage("Principal-only payment cannot exceed the remaining principal.", "error");
     return false;
   }
 
   const principalPaid = isHatagMode ? 0 : paymentAllocation.principalPaid;
-  const interestPaid = isHatagMode ? paidAmount : paymentAllocation.interestPaid;
+  const interestPaid = isHatagMode ? paidAmount : (isPrincipalOnlyMode ? 0 : paymentAllocation.interestPaid);
+  const effectiveAppliedAmount = isHatagMode ? paidAmount : paymentAllocation.appliedAmount;
 
   // For Bi-Monthly, capture balance snapshot BEFORE payment so future cycles
   // compound correctly on the reduced balance (e.g. 11000 - 700 = 10300 stored).
@@ -4261,7 +4876,7 @@ function applyPaymentForRow(rowIndex, paidAmount) {
       records[rowIndex].payableWithin,
       getInterestReferenceDate(records[rowIndex])
     );
-    records[rowIndex].monthlyOpenCurrentBalance = Math.max(0, currentOutstanding - paidAmount);
+    records[rowIndex].monthlyOpenCurrentBalance = Math.max(0, currentOutstanding - effectiveAppliedAmount);
     records[rowIndex].monthlyOpenPaymentCycles = currentCycles;
   }
 
@@ -4272,17 +4887,17 @@ function applyPaymentForRow(rowIndex, paidAmount) {
       records[rowIndex].payableWithin,
       getInterestReferenceDate(records[rowIndex])
     );
-    records[rowIndex].biMonthlyCurrentBalance = Math.max(0, currentOutstanding - paidAmount);
+    records[rowIndex].biMonthlyCurrentBalance = Math.max(0, currentOutstanding - effectiveAppliedAmount);
     records[rowIndex].biMonthlyPaymentCycles = currentCycles;
   }
 
   const currentPaid = getTotalPaidAmount(records[rowIndex]);
-  records[rowIndex].totalPaidAmount = currentPaid + (isHatagMode ? 0 : paidAmount);
+  records[rowIndex].totalPaidAmount = currentPaid + (isHatagMode ? 0 : effectiveAppliedAmount);
 
   if (!isHatagMode && isWeeklyFixedLoan(records[rowIndex].payableWithin)) {
     const currentWeeklyBalance = getWeeklyRunningBalance(records[rowIndex]);
     const currentWeeklyPrincipal = getWeeklyPrincipalBalance(records[rowIndex]);
-    records[rowIndex].weeklyOutstandingBalance = Math.max(0, currentWeeklyBalance - paidAmount);
+    records[rowIndex].weeklyOutstandingBalance = Math.max(0, currentWeeklyBalance - effectiveAppliedAmount);
     records[rowIndex].weeklyPrincipalBalance = Math.max(0, currentWeeklyPrincipal - principalPaid);
     records[rowIndex].weeklyPaymentCycles = getWeeklyInterestPeriods(records[rowIndex]);
 
@@ -4299,14 +4914,16 @@ function applyPaymentForRow(rowIndex, paidAmount) {
   history.unshift({
     date: toIsoDate(getReferenceDate()),
     amount: paidAmount,
+    appliedAmount: effectiveAppliedAmount,
     principalPaid,
     interestPaid,
+    paymentMode,
   });
   records[rowIndex].paymentHistory = history;
   setRecords(records);
   renderRecords();
-  showMessage("Payment applied successfully.", "success");
-  showToast("Payment successful", "success");
+  showMessage(isPrincipalOnlyMode ? "Principal-only payment applied successfully." : "Payment applied successfully.", "success");
+  showToast(isPrincipalOnlyMode ? "Principal payment successful" : "Payment successful", "success");
   return true;
 }
 
@@ -4346,7 +4963,7 @@ paymentEntryConfirmBtn?.addEventListener("click", () => {
   if (paymentEntryError) {
     paymentEntryError.textContent = "";
   }
-  openPaymentConfirmModal(rowIndex, amount);
+  openPaymentConfirmModal(rowIndex, amount, paymentEntryMode);
 });
 
 paymentConfirmCancelBtn?.addEventListener("click", () => {
@@ -4358,9 +4975,9 @@ paymentConfirmYesBtn?.addEventListener("click", () => {
     closePaymentConfirmModal();
     return;
   }
-  const { rowIndex, amount } = pendingPaymentConfirm;
+  const { rowIndex, amount, paymentMode } = pendingPaymentConfirm;
   closePaymentConfirmModal();
-  const success = applyPaymentForRow(rowIndex, amount);
+  const success = applyPaymentForRow(rowIndex, amount, { paymentMode });
   if (success) {
     closePaymentEntryModal();
   }
@@ -4459,6 +5076,35 @@ restoreAuthModal?.addEventListener("click", (event) => {
   }
 });
 
+editRecordConfirmBtn?.addEventListener("click", () => {
+  const value = (editRecordInput?.value || "").trim();
+  if (!value) {
+    if (editRecordError) {
+      editRecordError.textContent = "Value is required.";
+    }
+    editRecordInput?.focus();
+    return;
+  }
+
+  closeEditRecordModal(value);
+});
+
+editRecordCancelBtn?.addEventListener("click", () => {
+  closeEditRecordModal(null);
+});
+
+editRecordModal?.addEventListener("click", (event) => {
+  if (event.target === editRecordModal) {
+    closeEditRecordModal(null);
+  }
+});
+
+editRecordInput?.addEventListener("input", () => {
+  if (editRecordError && editRecordError.textContent) {
+    editRecordError.textContent = "";
+  }
+});
+
 restoreBackupInput?.addEventListener("change", () => {
   const file = restoreBackupInput.files && restoreBackupInput.files[0];
   closeDrawer();
@@ -4523,6 +5169,18 @@ window.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       restoreAuthConfirmBtn?.click();
+      return;
+    }
+  }
+
+  if (editRecordModal?.classList.contains("show")) {
+    if (event.key === "Escape") {
+      closeEditRecordModal(null);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      editRecordConfirmBtn?.click();
       return;
     }
   }
@@ -4705,6 +5363,7 @@ logoutConfirmModal?.addEventListener("click", (event) => {
 });
 
 initializeTheme();
+applyDashboardViewState();
 refreshBackupHealthStatus();
 
 togglePasswordBtn?.addEventListener("click", () => {

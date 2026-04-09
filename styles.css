@@ -240,6 +240,24 @@ body.login-locked {
   display: none !important;
 }
 
+/* Dashboard2 mode: same dashboard data/logic, stripped-down UI */
+body.dashboard2 .container {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.dashboard2 #toggle-loan-entry,
+body.dashboard2 #loan-entry-panel,
+body.dashboard2 #main-hamburger,
+body.dashboard2 #side-drawer,
+body.dashboard2 #drawer-overlay,
+body.dashboard2 #clear-records,
+body.dashboard2 .rebate-display-btn,
+body.dashboard2 .pay-principal-only-btn,
+body.dashboard2 table thead th:nth-child(6),
+body.dashboard2 table tbody td:nth-child(6) {
+  display: none !important;
+}
+
 @keyframes slideInFromRight {
   from {
     transform: translateX(60px);
@@ -419,31 +437,46 @@ body.login-locked {
 }
 
 .side-drawer-nav {
-  display: flex;
-  flex-direction: column;
-  padding: 14px 12px;
-  gap: 4px;
-  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px 12px 10px;
+  gap: 8px;
 }
 
 .drawer-link {
   display: block;
-  padding: 11px 14px;
-  border-radius: 8px;
+  padding: 9px 10px;
+  border-radius: 12px;
   text-decoration: none;
-  font-size: 0.92rem;
-  font-weight: 500;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   color: #163b2c;
-  transition: background 0.15s;
+  border: 1px solid rgba(133, 173, 156, 0.34);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(232, 243, 237, 0.92));
+  box-shadow: 0 8px 16px rgba(21, 58, 44, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease;
 }
 
 .drawer-link:hover {
-  background: #eef4f1;
+  transform: translateY(-1px);
+  border-color: rgba(68, 139, 107, 0.42);
+  background: linear-gradient(180deg, rgba(246, 252, 249, 0.98), rgba(221, 239, 229, 0.95));
+  box-shadow: 0 12px 22px rgba(21, 58, 44, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
 .drawer-link--active {
-  background: #d4e8de;
+  color: #f6fffb;
+  border-color: rgba(14, 103, 69, 0.52);
+  background: linear-gradient(180deg, #1f8a62, #146b4d);
+  box-shadow: 0 14px 24px rgba(14, 76, 53, 0.24), inset 0 1px 0 rgba(212, 255, 236, 0.22);
   font-weight: 700;
+}
+
+.drawer-link--active:hover {
+  border-color: rgba(14, 103, 69, 0.58);
+  background: linear-gradient(180deg, #23966a, #176f51);
+  box-shadow: 0 16px 28px rgba(14, 76, 53, 0.28), inset 0 1px 0 rgba(212, 255, 236, 0.24);
 }
 
 .side-drawer-footer {
@@ -581,6 +614,26 @@ body.theme-black .side-drawer-theme-label,
 body.theme-black .drawer-close,
 body.theme-black .empty {
   color: #d2dde8;
+}
+
+body.theme-black .drawer-link {
+  color: #dbe8f2;
+  border-color: rgba(84, 119, 148, 0.62);
+  background: linear-gradient(180deg, rgba(25, 39, 52, 0.96), rgba(18, 30, 41, 0.96));
+  box-shadow: 0 10px 18px rgba(3, 11, 19, 0.34), inset 0 1px 0 rgba(167, 210, 245, 0.08);
+}
+
+body.theme-black .drawer-link:hover {
+  border-color: rgba(103, 156, 196, 0.72);
+  background: linear-gradient(180deg, rgba(31, 48, 64, 0.98), rgba(22, 37, 50, 0.98));
+  box-shadow: 0 14px 24px rgba(2, 10, 18, 0.44), inset 0 1px 0 rgba(180, 225, 255, 0.11);
+}
+
+body.theme-black .drawer-link--active {
+  color: #f3fffb;
+  border-color: rgba(80, 213, 160, 0.56);
+  background: linear-gradient(180deg, #1a8f67, #10684a);
+  box-shadow: 0 16px 28px rgba(4, 18, 13, 0.46), inset 0 1px 0 rgba(202, 255, 232, 0.18);
 }
 
 body.theme-black .drawer-close {
@@ -802,6 +855,18 @@ body.theme-black .btn-secondary {
   color: #e7edf3;
   border: 1px solid rgba(110, 157, 191, 0.45);
   box-shadow: 0 0 18px rgba(66, 159, 212, 0.16), inset 0 1px 0 rgba(219, 237, 250, 0.12);
+}
+
+body.theme-black .outstanding-balance-cell .pay-principal-only-btn {
+  background: #e07b00;
+  color: #fff !important;
+  border-color: #c46d00;
+  box-shadow: none;
+}
+
+body.theme-black .outstanding-balance-cell .pay-principal-only-btn:hover:not(:disabled) {
+  background: #c46d00;
+  border-color: #a85e00;
 }
 
 body.theme-black .btn-danger {
@@ -1836,10 +1901,11 @@ tbody tr.past-due-row:hover {
 .remarks-controls .show-payment-history-btn,
 .remarks-controls .statement-btn,
 .remarks-controls .write-off-btn,
-.remarks-controls .hatag-hatag-btn {
-  min-height: 25px;
-  padding: 0.18rem 0.34rem;
-  font-size: 0.6rem;
+.remarks-controls .hatag-hatag-btn,
+.remarks-controls .settle-btn {
+  min-height: 22px;
+  padding: 0.14rem 0.26rem;
+  font-size: 0.54rem;
   line-height: 1.1;
   width: 100%;
   text-align: center;
@@ -1851,14 +1917,26 @@ tbody tr.past-due-row:hover {
 .remarks-controls .show-payment-history-btn:hover,
 .remarks-controls .statement-btn:hover,
 .remarks-controls .write-off-btn:hover,
-.remarks-controls .hatag-hatag-btn:hover {
+.remarks-controls .hatag-hatag-btn:hover,
+.remarks-controls .settle-btn:hover {
   filter: saturate(1.08);
+}
+
+.remarks-controls .settle-btn {
+  background: linear-gradient(180deg, #e8f6ec, #d3ebda);
+  border-color: rgba(76, 135, 92, 0.35);
+  color: #1f5e33;
 }
 
 .remarks-controls .write-off-btn[disabled],
 .remarks-controls .hatag-hatag-btn[disabled] {
   opacity: 0.78;
   cursor: not-allowed;
+}
+
+.records-panel td:last-child .remarks-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem;
 }
 
 .per-period {
@@ -1877,10 +1955,41 @@ tbody tr.past-due-row:hover {
   line-height: 1.2;
 }
 
+.settled-note {
+  color: #1f6a47;
+  font-weight: 700;
+}
+
+.settled-dashboard-view .loan-entry {
+  display: none;
+}
+
 .borrower-name {
   font-weight: 600;
   font-size: 0.76rem;
   margin-bottom: 0.2rem;
+}
+
+.borrower-name-row,
+.borrower-contact-row,
+.borrower-address-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.borrower-contact-row,
+.borrower-address-row {
+  margin-top: 0.15rem;
+}
+
+.borrower-edit-btn {
+  flex-shrink: 0;
+  min-width: 46px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.62rem;
+  line-height: 1.1;
 }
 
 .borrower-contact,
@@ -2035,6 +2144,10 @@ tbody tr.past-due-row:hover {
   display: none;
 }
 
+.rebate-editor-hidden {
+  display: none;
+}
+
 .history {
   margin: 0.32rem 0 0;
   padding-left: 1rem;
@@ -2049,6 +2162,59 @@ tbody tr.past-due-row:hover {
 }
 
 .outstanding-balance-value {
+  font-weight: 700;
+}
+
+.outstanding-balance-cell {
+  display: grid;
+  gap: 0.2rem;
+  align-content: start;
+}
+
+.outstanding-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.outstanding-balance-cell .rebate-display-btn,
+.outstanding-balance-cell .save-rebate-btn {
+  padding: 0.2rem 0.32rem;
+  font-size: 0.6rem;
+  min-height: 22px;
+  justify-self: start;
+}
+
+.outstanding-balance-cell .pay-principal-only-btn {
+  padding: 0.2rem 0.32rem;
+  font-size: 0.45rem;
+  min-height: 22px;
+  justify-self: start;
+  background: #e07b00;
+  color: #fff !important;
+  border-color: #c46d00;
+}
+
+.outstanding-balance-cell .pay-principal-only-btn:hover:not(:disabled) {
+  background: #c46d00;
+  border-color: #a85e00;
+}
+
+.outstanding-balance-cell .pay-principal-only-btn:disabled {
+  background: #e0a060;
+  border-color: #c49050;
+  color: #fff;
+  opacity: 0.6;
+}
+
+.outstanding-balance-cell .rebate-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.rebate-note {
+  color: #1f6a47;
   font-weight: 700;
 }
 
@@ -2337,6 +2503,39 @@ th {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+.edit-record-card {
+  width: min(440px, 96vw);
+  border: 1px solid rgba(37, 102, 151, 0.22);
+  background: linear-gradient(168deg, #ffffff, #eef6ff);
+  box-shadow: 0 22px 40px rgba(18, 48, 74, 0.24);
+}
+
+.edit-record-text {
+  margin-top: 0.46rem;
+  color: #355974;
+  font-size: 0.78rem;
+}
+
+.edit-record-card .dialog-field input {
+  border-color: #bad1e3;
+  background: #ffffff;
+}
+
+.edit-record-card .dialog-field input:focus {
+  border-color: #4c8fbe;
+  box-shadow: 0 0 0 3px rgba(76, 143, 190, 0.18);
+}
+
+body.theme-black .edit-record-card {
+  border-color: rgba(95, 152, 197, 0.26);
+  background: linear-gradient(168deg, #1a3042, #152736);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.45);
+}
+
+body.theme-black .edit-record-text {
+  color: #b9d2e4;
+}
+
 @media (max-width: 640px) {
   .payment-history-row {
     grid-template-columns: 42px 98px 1fr;
@@ -2360,7 +2559,7 @@ th {
   }
 
   .container {
-    padding-top: 5rem;
+    padding-top: 5.35rem;
     gap: 0.35rem;
   }
 
@@ -2631,10 +2830,25 @@ body.officer-page #loan-entry-panel {
     flex-direction: column;
   }
 
+  .container {
+    padding-top: 7.25rem;
+  }
+
+  .topbar {
+    top: 0.24rem;
+    left: 0.34rem;
+    right: 0.34rem;
+    padding: 0.28rem 0.4rem;
+    gap: 0.36rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
   .topbar-actions {
     width: 100%;
     justify-content: flex-end;
-    margin-top: 0.3rem;
+    margin-top: 0.16rem;
+    gap: 0.22rem;
   }
 
   .sync-status-badge {
@@ -2677,23 +2891,24 @@ body.officer-page #loan-entry-panel {
   }
 
   .topbar-actions button {
-    padding: 0.26rem 0.42rem;
-    font-size: 0.66rem;
-  }
-
-  .topbar {
-    top: 0.3rem;
-    left: 0.4rem;
-    right: 0.4rem;
+    min-height: 28px;
+    padding: 0.2rem 0.34rem;
+    font-size: 0.62rem;
   }
 
   .logo {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
   }
 
-  h1 {
-    font-size: 0.98rem;
+  .topbar h1 {
+    font-size: 0.8rem;
+    line-height: 1.05;
+  }
+
+  .topbar p {
+    font-size: 0.58rem;
+    line-height: 1.1;
   }
 
   .table-head {
@@ -2806,20 +3021,38 @@ body.officer-page #loan-entry-panel {
   }
 
   .records-panel td:last-child .remarks-controls {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.18rem;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.14rem;
+    padding: 0.02rem 0 0.08rem;
+  }
+
+  .records-panel td:last-child .remarks-controls::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .records-panel td:last-child .remarks-controls::-webkit-scrollbar-thumb {
+    background: rgba(74, 101, 123, 0.38);
+    border-radius: 999px;
   }
 
   .records-panel td:last-child .remarks-controls .save-paid-btn,
   .records-panel td:last-child .remarks-controls .show-payment-history-btn,
   .records-panel td:last-child .remarks-controls .statement-btn,
   .records-panel td:last-child .remarks-controls .write-off-btn,
-  .records-panel td:last-child .remarks-controls .hatag-hatag-btn {
-    min-height: 22px;
-    padding: 0.08rem 0.12rem;
-    font-size: 0.44rem;
+  .records-panel td:last-child .remarks-controls .hatag-hatag-btn,
+  .records-panel td:last-child .remarks-controls .settle-btn {
+    min-height: 18px;
+    padding: 0.05rem 0.18rem;
+    font-size: 0.38rem;
     line-height: 1.05;
     letter-spacing: -0.01em;
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 64px;
+    white-space: nowrap;
   }
 
   .records-panel td:nth-child(5) {
@@ -2843,6 +3076,12 @@ body.officer-page #loan-entry-panel {
   .records-panel .outstanding-balance-cell .outstanding-balance-value {
     font-size: 0.58rem;
     color: #173a53;
+  }
+
+  .records-panel .outstanding-balance-cell .rebate-display-btn,
+  .records-panel .outstanding-balance-cell .save-rebate-btn,
+  .records-panel .outstanding-balance-cell .pay-principal-only-btn {
+    font-size: 0.54rem;
   }
 
   .records-panel .borrower-name {
@@ -2999,6 +3238,20 @@ body.officer-page #loan-entry-panel {
 }
 
 @media (max-width: 430px) {
+  .container {
+    padding-top: 7.6rem;
+  }
+
+  .topbar {
+    padding: 0.24rem 0.34rem;
+    gap: 0.3rem;
+  }
+
+  .topbar-actions button {
+    font-size: 0.58rem;
+    padding: 0.18rem 0.3rem;
+  }
+
   .records-panel tbody tr {
     grid-template-columns: 1fr;
   }

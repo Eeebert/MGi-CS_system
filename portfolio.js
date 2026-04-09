@@ -422,6 +422,10 @@ function getWeeklyRunningState(record, referenceDate = new Date()) {
 }
 
 function computeOutstandingBalance(record) {
+  if (record?.isSettled === true) {
+    return 0;
+  }
+
   // For weekly loans (Emergency Loan, etc.), use the running balance calculation
   if (isWeeklyFixedLoan(record.payableWithin)) {
     return getWeeklyRunningState(record).outstandingBalance;

@@ -9,6 +9,11 @@ require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const schemaMode = String(
+  process.env.DB_SCHEMA_MODE || (process.env.NODE_ENV === "production" ? "validate" : "apply")
+)
+  .trim()
+  .toLowerCase();
 
 // ====================
 // SECURITY MIDDLEWARE
@@ -257,6 +262,55 @@ async function ensureSchema() {
           created_by TEXT
         );
       `);
+
+      // Enforce RLS on all public tables so Supabase REST access is blocked by default.
+      await pool.query(`
+        ALTER TABLE IF EXISTS public.app_state ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE IF EXISTS public.audit_logs ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE IF EXISTS public.data_backup ENABLE ROW LEVEL SECURITY;
+      `);
+
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public' AND tablename = 'app_state' AND policyname = 'deny_all_app_state'
+          ) THEN
+            CREATE POLICY deny_all_app_state
+              ON public.app_state
+              FOR ALL
+              TO anon, authenticated
+              USING (false)
+              WITH CHECK (false);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public' AND tablename = 'audit_logs' AND policyname = 'deny_all_audit_logs'
+          ) THEN
+            CREATE POLICY deny_all_audit_logs
+              ON public.audit_logs
+              FOR ALL
+              TO anon, authenticated
+              USING (false)
+              WITH CHECK (false);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+            WHERE schemaname = 'public' AND tablename = 'data_backup' AND policyname = 'deny_all_data_backup'
+          ) THEN
+            CREATE POLICY deny_all_data_backup
+              ON public.data_backup
+              FOR ALL
+              TO anon, authenticated
+              USING (false)
+              WITH CHECK (false);
+          END IF;
+        END
+        $$;
+      `);
       
       console.log("Database schema ensured successfully");
       return;
@@ -268,18 +322,97 @@ async function ensureSchema() {
   }
 }
 
+async function validateSchema() {
+  if (!pool) {
+    return { ok: false, missingTables: [] };
+  }
+
+  const requiredTables = ["app_state", "audit_logs", "data_backup"];
+  const result = await pool.query(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'public'
+       AND table_name = ANY($1::text[])`,
+    [requiredTables]
+  );
+
+  const existingTables = new Set(result.rows.map((row) => row.table_name));
+  const missingTables = requiredTables.filter((tableName) => !existingTables.has(tableName));
+
+  return {
+    ok: missingTables.length === 0,
+    missingTables,
+  };
+}
+
+async function getRlsStatusSnapshot() {
+  if (!pool) {
+    return { enabled: false, tables: [], policies: [] };
+  }
+
+  const tablesToCheck = ["app_state", "audit_logs", "data_backup"];
+
+  const tableResult = await pool.query(
+    `SELECT c.relname AS table_name, c.relrowsecurity AS rls_enabled
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE c.relkind = 'r'
+       AND n.nspname = 'public'
+       AND c.relname = ANY($1::text[])
+     ORDER BY c.relname`,
+    [tablesToCheck]
+  );
+
+  const policyResult = await pool.query(
+    `SELECT tablename, policyname, roles, cmd
+     FROM pg_policies
+     WHERE schemaname = 'public'
+       AND tablename = ANY($1::text[])
+     ORDER BY tablename, policyname`,
+    [tablesToCheck]
+  );
+
+  const tableRows = tableResult.rows;
+  const missingTables = tablesToCheck.filter(
+    (tableName) => !tableRows.some((row) => row.table_name === tableName)
+  );
+
+  return {
+    enabled: missingTables.length === 0 && tableRows.every((row) => row.rls_enabled === true),
+    tables: [...tableRows, ...missingTables.map((tableName) => ({ table_name: tableName, rls_enabled: false }))],
+    policies: policyResult.rows,
+  };
+}
+
 // ====================
 // API ENDPOINTS
 // ====================
 
 // Health check
 app.get("/health", asyncHandler(async (req, res) => {
-  const db = { connected: false, provider: databaseProvider, configured: Boolean(databaseUrl) };
+  const db = {
+    connected: false,
+    provider: databaseProvider,
+    configured: Boolean(databaseUrl),
+    schemaMode,
+    rls: { enabled: false, tables: [], policies: [] },
+  };
 
   if (pool) {
     try {
       await pool.query("SELECT 1");
       db.connected = true;
+
+      try {
+        db.rls = await getRlsStatusSnapshot();
+      } catch (error) {
+        db.rls = {
+          enabled: false,
+          tables: [],
+          policies: [],
+          error: error.message,
+        };
+      }
     } catch (error) {
       db.connected = false;
     }
@@ -515,15 +648,33 @@ app.use((req, res) => {
 // ====================
 
 (async () => {
-  try {
-    await ensureSchema();
-  } catch (error) {
-    console.error("Schema setup failed after retries:", error.message);
+  if (pool) {
+    if (schemaMode === "apply") {
+      try {
+        await ensureSchema();
+      } catch (error) {
+        console.error("Schema setup failed after retries:", error.message);
+      }
+    } else {
+      try {
+        const schemaValidation = await validateSchema();
+        if (!schemaValidation.ok) {
+          console.error(
+            `Database schema validation failed. Missing tables: ${schemaValidation.missingTables.join(", ")}`
+          );
+        } else {
+          console.log("Database schema validation passed.");
+        }
+      } catch (error) {
+        console.error("Schema validation failed:", error.message);
+      }
+    }
   }
   
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Database: ${databaseProvider}`);
+    console.log(`Database schema mode: ${schemaMode}`);
     console.log(`Node environment: ${process.env.NODE_ENV || "production"}`);
   });
 })();

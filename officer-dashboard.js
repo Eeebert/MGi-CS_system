@@ -16,7 +16,6 @@ let currentOfficer = "";
 const form = document.getElementById("loan-form");
 const message = document.getElementById("form-message");
 const body = document.getElementById("records-body");
-const clearBtn = document.getElementById("clear-records");
 const nameInput = document.getElementById("name");
 const addressInput = document.getElementById("address");
 const contactNumberInput = document.getElementById("contactNumber");
@@ -1915,14 +1914,6 @@ writeOffModal?.addEventListener("click", (event) => {
   }
 });
 
-clearBtn?.addEventListener("click", () => {
-  if (confirm("Delete all records? This cannot be undone.")) {
-    setRecords([]);
-    renderRecords();
-    showMessage("All records deleted.", "success");
-  }
-});
-
 body?.addEventListener("change", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement) || !target.classList.contains("due-date-input")) {
@@ -2317,7 +2308,6 @@ async function refreshBackupHealthStatus() {
 }
 
 backupDataBtn?.addEventListener("click", () => {
-  // Backup all localStorage data
   const allData = {
     meta: {
       source: "mgi-cs-system-officer",
@@ -2327,25 +2317,22 @@ backupDataBtn?.addEventListener("click", () => {
     data: {},
   };
 
-  // Get all data from localStorage
-  const loanRecords = localStorage.getItem("mgi_loan_records");
-  if (loanRecords) {
-    allData.data.mgi_loan_records = JSON.parse(loanRecords);
-  }
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = String(localStorage.key(index) || "");
+    if (!key.startsWith("mgi_")) {
+      continue;
+    }
 
-  const addressSuggestions = localStorage.getItem("mgi_saved_addresses");
-  if (addressSuggestions) {
-    allData.data.mgi_saved_addresses = JSON.parse(addressSuggestions);
-  }
+    const rawValue = localStorage.getItem(key);
+    if (rawValue === null) {
+      continue;
+    }
 
-  const theme = localStorage.getItem("mgi_dashboard_theme");
-  if (theme) {
-    allData.data.mgi_dashboard_theme = theme;
-  }
-
-  const authSettings = localStorage.getItem("mgi_auth_settings");
-  if (authSettings) {
-    allData.data.mgi_auth_settings = JSON.parse(authSettings);
+    try {
+      allData.data[key] = JSON.parse(rawValue);
+    } catch {
+      allData.data[key] = rawValue;
+    }
   }
 
   const jsonBlob = new Blob([JSON.stringify(allData, null, 2)], { type: "application/json" });
@@ -2356,7 +2343,7 @@ backupDataBtn?.addEventListener("click", () => {
   link.click();
   URL.revokeObjectURL(url);
   
-  setBackupStatusNote("ok", "Backup status: full backup available");
+  setBackupStatusNote("ok", "Backup status: full system backup available");
 });
 
 restoreBackupBtn?.addEventListener("click", () => {
@@ -2377,21 +2364,15 @@ restoreBackupInput?.addEventListener("change", (e) => {
         return;
       }
 
-      // Restore all data from backup
-      if (backupData.data.mgi_loan_records) {
-        localStorage.setItem("mgi_loan_records", JSON.stringify(backupData.data.mgi_loan_records));
-      }
-      if (backupData.data.mgi_saved_addresses) {
-        localStorage.setItem("mgi_saved_addresses", JSON.stringify(backupData.data.mgi_saved_addresses));
-      }
-      if (backupData.data.mgi_dashboard_theme) {
-        localStorage.setItem("mgi_dashboard_theme", backupData.data.mgi_dashboard_theme);
-      }
-      if (backupData.data.mgi_auth_settings) {
-        localStorage.setItem("mgi_auth_settings", JSON.stringify(backupData.data.mgi_auth_settings));
-      }
+      Object.entries(backupData.data).forEach(([key, value]) => {
+        if (!key.startsWith("mgi_")) {
+          return;
+        }
 
-      setBackupStatusNote("ok", "Backup status: restored successfully");
+        localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+      });
+
+      setBackupStatusNote("ok", "Backup status: full system backup restored successfully");
       setTimeout(() => {
         window.location.reload();
       }, 1500);
