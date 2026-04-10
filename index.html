@@ -19,7 +19,7 @@
   <body>
     <div id="loading-screen" class="loading-screen">
       <div class="login-shell">
-        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" />
+        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" id="login-logo-trigger" role="button" tabindex="0" aria-label="Show admin dashboard button" />
         <form id="login-form" class="login-form" novalidate>
           <h2>Login</h2>
           <label>
@@ -36,7 +36,7 @@
             </div>
           </label>
           <button type="submit" class="btn-primary login-submit">Log In</button>
-          <button type="button" class="btn-secondary login-submit" onclick="window.location.href='admin.html'">Admin Dashboard</button>
+          <button type="button" class="btn-secondary login-submit" id="admin-login-button" onclick="window.location.href='admin.html'" hidden>Admin Dashboard</button>
           <p id="login-message" class="login-message" role="status" aria-live="polite"></p>
         </form>
       </div>

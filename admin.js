@@ -4,6 +4,8 @@ const DEFAULT_AUTH_SETTINGS = {
   mainPassword: "123",
   portfolioUsername: "portfolio",
   portfolioPassword: "123",
+  dashboard2Username: "aga",
+  dashboard2Password: "123",
   adminPassword: "admin123",
 };
 
@@ -19,6 +21,8 @@ const mainUsernameInput = document.getElementById("main-username");
 const mainPasswordInput = document.getElementById("main-password");
 const portfolioUsernameInput = document.getElementById("portfolio-username");
 const portfolioPasswordInput = document.getElementById("portfolio-password");
+const dashboard2UsernameInput = document.getElementById("dashboard2-username");
+const dashboard2PasswordInput = document.getElementById("dashboard2-password");
 const adminPasswordInput = document.getElementById("admin-password");
 const resetDefaultsBtn = document.getElementById("admin-reset-defaults");
 
@@ -32,10 +36,24 @@ function getAuthSettings() {
     if (!parsed || typeof parsed !== "object") {
       return { ...DEFAULT_AUTH_SETTINGS };
     }
-    return {
+    const merged = {
       ...DEFAULT_AUTH_SETTINGS,
       ...parsed,
     };
+
+    const dashboard2User = String(merged.dashboard2Username || DEFAULT_AUTH_SETTINGS.dashboard2Username);
+    const dashboard2Pass = String(merged.dashboard2Password || DEFAULT_AUTH_SETTINGS.dashboard2Password);
+    const leakedMainFromDashboard2 =
+      String(merged.mainUsername || "") === dashboard2User &&
+      String(merged.mainPassword || "") === dashboard2Pass;
+
+    if (leakedMainFromDashboard2) {
+      merged.mainUsername = DEFAULT_AUTH_SETTINGS.mainUsername;
+      merged.mainPassword = DEFAULT_AUTH_SETTINGS.mainPassword;
+      localStorage.setItem(AUTH_SETTINGS_KEY, JSON.stringify(merged));
+    }
+
+    return merged;
   } catch {
     return { ...DEFAULT_AUTH_SETTINGS };
   }
@@ -58,6 +76,8 @@ function fillSettingsForm(settings) {
   if (mainPasswordInput) mainPasswordInput.value = settings.mainPassword;
   if (portfolioUsernameInput) portfolioUsernameInput.value = settings.portfolioUsername;
   if (portfolioPasswordInput) portfolioPasswordInput.value = settings.portfolioPassword;
+  if (dashboard2UsernameInput) dashboard2UsernameInput.value = settings.dashboard2Username;
+  if (dashboard2PasswordInput) dashboard2PasswordInput.value = settings.dashboard2Password;
   if (adminPasswordInput) adminPasswordInput.value = settings.adminPassword;
 }
 
@@ -112,6 +132,8 @@ settingsForm?.addEventListener("submit", (event) => {
     mainPassword: String(mainPasswordInput?.value || "").trim(),
     portfolioUsername: String(portfolioUsernameInput?.value || "").trim(),
     portfolioPassword: String(portfolioPasswordInput?.value || "").trim(),
+    dashboard2Username: String(dashboard2UsernameInput?.value || "").trim(),
+    dashboard2Password: String(dashboard2PasswordInput?.value || "").trim(),
     adminPassword: String(adminPasswordInput?.value || "").trim(),
   };
 

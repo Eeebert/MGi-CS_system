@@ -53,6 +53,8 @@ const loginUsernameInput = document.getElementById("login-username");
 const loginPasswordInput = document.getElementById("login-password");
 const togglePasswordBtn = document.getElementById("toggle-password");
 const loginMessage = document.getElementById("login-message");
+const loginLogoTrigger = document.getElementById("login-logo-trigger");
+const adminLoginButton = document.getElementById("admin-login-button");
 const loanEntryPanel = document.getElementById("loan-entry-panel");
 const mainContainer = document.querySelector(".container");
 const toggleLoanEntryBtn = document.getElementById("toggle-loan-entry");
@@ -607,6 +609,7 @@ const OFFICER_STORAGE_KEY_PREFIX = "mgi_officer_records_";
 const DEFAULT_OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
+const DASHBOARD2_SESSION_KEY = "mgi_dashboard2_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
 const AUTH_SETTINGS_KEY = "mgi_auth_settings";
 const DEFAULT_AUTH_SETTINGS = {
@@ -614,6 +617,8 @@ const DEFAULT_AUTH_SETTINGS = {
   mainPassword: "123",
   portfolioUsername: "portfolio",
   portfolioPassword: "123",
+  dashboard2Username: "aga",
+  dashboard2Password: "123",
   adminPassword: "admin123",
 };
 const AUTO_REFRESH_MS = 5 * 1000;
@@ -803,10 +808,29 @@ function getAuthSettings() {
     if (!parsed || typeof parsed !== "object") {
       return { ...DEFAULT_AUTH_SETTINGS };
     }
-    return {
+    const merged = {
       ...DEFAULT_AUTH_SETTINGS,
       ...parsed,
     };
+    // Repair accidental shared-login drift where main credentials were overwritten
+    // with dashboard2 defaults. Main dashboard must stay on bookkeeper credentials.
+    const dashboard2User = String(merged.dashboard2Username || DEFAULT_AUTH_SETTINGS.dashboard2Username);
+    const dashboard2Pass = String(merged.dashboard2Password || DEFAULT_AUTH_SETTINGS.dashboard2Password);
+    const leakedMainFromDashboard2 =
+      String(merged.mainUsername || "") === dashboard2User &&
+      String(merged.mainPassword || "") === dashboard2Pass;
+
+    if (leakedMainFromDashboard2) {
+      merged.mainUsername = DEFAULT_AUTH_SETTINGS.mainUsername;
+      merged.mainPassword = DEFAULT_AUTH_SETTINGS.mainPassword;
+      try {
+        localStorage.setItem(AUTH_SETTINGS_KEY, JSON.stringify(merged));
+      } catch {
+        // Ignore localStorage write errors.
+      }
+    }
+
+    return merged;
   } catch {
     return { ...DEFAULT_AUTH_SETTINGS };
   }
@@ -3937,7 +3961,22 @@ function setLoginMessage(text, isSuccess) {
 }
 
 function authenticateUser(username, password) {
+  const isDashboard2Page = isDashboard2Context();
   const auth = getAuthSettings();
+  const enteredUsername = String(username || "").trim().toLowerCase();
+  const enteredPassword = String(password || "").trim();
+  const dashboard2Username = String(auth.dashboard2Username || DEFAULT_AUTH_SETTINGS.dashboard2Username).trim().toLowerCase();
+  const dashboard2Password = String(auth.dashboard2Password || DEFAULT_AUTH_SETTINGS.dashboard2Password).trim();
+  const defaultDashboard2Username = String(DEFAULT_AUTH_SETTINGS.dashboard2Username || "aga").trim().toLowerCase();
+  const defaultDashboard2Password = String(DEFAULT_AUTH_SETTINGS.dashboard2Password || "123").trim();
+  const matchesDashboard2Creds =
+    (enteredUsername === dashboard2Username && enteredPassword === dashboard2Password) ||
+    (enteredUsername === defaultDashboard2Username && enteredPassword === defaultDashboard2Password);
+
+  if (matchesDashboard2Creds) {
+    return isDashboard2Page ? "main" : "dashboard2";
+  }
+
   if (username === auth.mainUsername && password === auth.mainPassword) {
     return "main";
   }
@@ -3945,6 +3984,16 @@ function authenticateUser(username, password) {
     return "portfolio";
   }
   return null;
+}
+
+function isDashboard2Context() {
+  const pathName = String(window.location.pathname || "").toLowerCase();
+  return (
+    document.body?.classList?.contains("dashboard2") ||
+    pathName.endsWith("/dashboard2.html") ||
+    pathName.endsWith("dashboard2.html") ||
+    pathName.includes("dashboard2")
+  );
 }
 
 form.addEventListener("submit", (event) => {
@@ -5375,15 +5424,37 @@ togglePasswordBtn?.addEventListener("click", () => {
   togglePasswordBtn.setAttribute("aria-label", reveal ? "Hide password" : "Show password");
 });
 
+function revealAdminLoginButton() {
+  if (!adminLoginButton) {
+    return;
+  }
+  adminLoginButton.hidden = false;
+}
+
+loginLogoTrigger?.addEventListener("click", revealAdminLoginButton);
+loginLogoTrigger?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    revealAdminLoginButton();
+  }
+});
+
 loginForm?.addEventListener("submit", (event) => {
   event.preventDefault();
 
   const username = (loginUsernameInput?.value || "").trim();
   const password = loginPasswordInput?.value || "";
+  const onDashboard2Page = isDashboard2Context();
 
   const authType = authenticateUser(username, password);
   if (authType === "main") {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+    if (onDashboard2Page) {
+      sessionStorage.setItem(DASHBOARD2_SESSION_KEY, "1");
+      sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    } else {
+      sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+      sessionStorage.removeItem(DASHBOARD2_SESSION_KEY);
+    }
     sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
     setLoginMessage("Login successful.", true);
     hideLoadingScreen();
@@ -5394,8 +5465,17 @@ loginForm?.addEventListener("submit", (event) => {
   if (authType === "portfolio") {
     sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
     sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    sessionStorage.removeItem(DASHBOARD2_SESSION_KEY);
     // Redirect to portfolio page immediately
     window.location.href = "portfolio.html";
+    return;
+  }
+
+  if (authType === "dashboard2") {
+    sessionStorage.setItem(DASHBOARD2_SESSION_KEY, "1");
+    sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+    window.location.replace("dashboard2.html");
     return;
   }
 
@@ -5434,9 +5514,15 @@ renderRecords();
 initializeDatePickers();
 
 window.addEventListener("load", () => {
+  const onDashboard2Page = isDashboard2Context();
+  const isMainLoggedIn = sessionStorage.getItem(LOGIN_SESSION_KEY) === "1";
+  const isDashboard2LoggedIn = sessionStorage.getItem(DASHBOARD2_SESSION_KEY) === "1";
+
   ensureSyncStatusElement();
   console.info("[session][main] Startup", {
-    loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",
+    loggedIn: isMainLoggedIn,
+    dashboard2LoggedIn: isDashboard2LoggedIn,
+    dashboard2Page: onDashboard2Page,
     online: navigator.onLine,
     userAgent: navigator.userAgent,
   });
@@ -5444,7 +5530,12 @@ window.addEventListener("load", () => {
   // Pull latest data from the database, then re-render so all devices stay in sync
   loadRecordsFromServer().then(() => renderRecords());
 
-  if (sessionStorage.getItem(LOGIN_SESSION_KEY) === "1") {
+  if (!onDashboard2Page && isDashboard2LoggedIn) {
+    window.location.replace("dashboard2.html");
+    return;
+  }
+
+  if ((onDashboard2Page && isDashboard2LoggedIn) || isMainLoggedIn) {
     hideLoadingScreen();
     return;
   }
