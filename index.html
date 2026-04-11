@@ -19,7 +19,7 @@
   <body>
     <div id="loading-screen" class="loading-screen">
       <div class="login-shell">
-        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" id="login-logo-trigger" role="button" tabindex="0" aria-label="Show admin dashboard button" />
+        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" />
         <form id="login-form" class="login-form" novalidate>
           <h2>Login</h2>
           <label>
@@ -36,7 +36,7 @@
             </div>
           </label>
           <button type="submit" class="btn-primary login-submit">Log In</button>
-          <button type="button" class="btn-secondary login-submit" id="admin-login-button" onclick="window.location.href='admin.html'" hidden>Admin Dashboard</button>
+          <button type="button" class="btn-secondary login-submit" onclick="window.location.href='admin.html'">Admin Dashboard</button>
           <p id="login-message" class="login-message" role="status" aria-live="polite"></p>
         </form>
       </div>
@@ -257,6 +257,7 @@
             </label>
             <button id="use-today" class="btn-secondary" type="button">Use Today</button>
             <button id="export-word" class="btn-secondary" type="button">Print to Word (.doc)</button>
+            <button id="clear-records" class="btn-danger" type="button">Delete All</button>
           </div>
         </div>
 
@@ -370,10 +371,9 @@
 
     <div id="edit-record-modal" class="dialog-backdrop" aria-hidden="true">
       <div class="dialog-card edit-record-card" role="dialog" aria-modal="true" aria-labelledby="edit-record-title">
-        <h3 id="edit-record-title">Edit borrower name:</h3>
-        <p class="edit-record-text">Update value below and click Save.</p>
+        <h3 id="edit-record-title">Edit value:</h3>
         <label class="dialog-field">
-          <span id="edit-record-label">Borrower Name</span>
+          <span id="edit-record-label">Value</span>
           <input type="text" id="edit-record-input" autocomplete="off" />
         </label>
         <p id="edit-record-error" class="dialog-error" role="status" aria-live="polite"></p>

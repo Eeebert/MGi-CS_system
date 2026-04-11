@@ -16,6 +16,7 @@ let currentOfficer = "";
 const form = document.getElementById("loan-form");
 const message = document.getElementById("form-message");
 const body = document.getElementById("records-body");
+const clearBtn = document.getElementById("clear-records");
 const nameInput = document.getElementById("name");
 const addressInput = document.getElementById("address");
 const contactNumberInput = document.getElementById("contactNumber");
@@ -438,8 +439,26 @@ function getStateApiCandidates(stateKey, includeCacheBuster) {
   return [...new Set(candidates)];
 }
 
+function isLocalDevelopmentHost() {
+  const host = String(window.location.hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1";
+}
+
+function shouldAllowFallbackWriteApi() {
+  if (!isLocalDevelopmentHost()) {
+    return true;
+  }
+
+  return localStorage.getItem("mgi_allow_fallback_write_api") === "1";
+}
+
 async function fetchStateApi(stateKey, options, includeCacheBuster) {
-  const candidates = getStateApiCandidates(stateKey, includeCacheBuster);
+  const method = String(options?.method || "GET").toUpperCase();
+  const isWriteRequest = method !== "GET";
+  const allowFallback = !isWriteRequest || shouldAllowFallbackWriteApi();
+  const candidates = allowFallback
+    ? getStateApiCandidates(stateKey, includeCacheBuster)
+    : ["/api/state/" + encodeURIComponent(stateKey) + (includeCacheBuster ? "?t=" + Date.now() : "")];
   let lastErrorResponse = null;
   let lastNetworkError = null;
 
@@ -822,8 +841,12 @@ function isMonthly60FixedLoan(payableWithin) {
   return payableWithin === LOAN_TYPE_MONTHLY_FIXED_60;
 }
 
+function isEmergencyFixedLoan(payableWithin) {
+  return payableWithin === LOAN_TYPE_EMERGENCY_FIXED || payableWithin === "Emergency Loan";
+}
+
 function isWeeklyFixedLoan(payableWithin) {
-  return payableWithin === LOAN_TYPE_EMERGENCY_FIXED || payableWithin === "Emergency Loan" || payableWithin === "Weekly";
+  return isEmergencyFixedLoan(payableWithin) || payableWithin === "Weekly";
 }
 
 function getLoanPeriodDays(payableWithin) {
@@ -880,8 +903,23 @@ function getWeeklyInterestPeriodsFromDate(dateGranted, referenceDate) {
   return Math.max(0, Math.floor(diffDays(startDate, referenceDay) / 7));
 }
 
+function getEmergencyFixedInterestPeriodsFromDate(dateGranted, referenceDate) {
+  const startDate = new Date(`${dateGranted}T00:00:00`);
+  const referenceDay = referenceDate instanceof Date ? referenceDate : new Date(`${referenceDate}T00:00:00`);
+
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(referenceDay.getTime())) {
+    return 1;
+  }
+
+  const elapsedDays = Math.max(0, diffDays(startDate, referenceDay));
+  return Math.max(1, Math.ceil(elapsedDays / 7));
+}
+
 function getWeeklyRunningState(record, referenceDate = getReferenceDate()) {
   const effectiveInterestRate = getEffectiveInterestRate(record) / 100;
+  const periodsFromDate = isEmergencyFixedLoan(record.payableWithin)
+    ? getEmergencyFixedInterestPeriodsFromDate
+    : getWeeklyInterestPeriodsFromDate;
   const history = [...getPaymentHistory(record)]
     .filter((item) => item?.date && compareIsoDate(item.date, toIsoDate(referenceDate)) <= 0)
     .sort((a, b) => compareIsoDate(a.date, b.date));
@@ -892,7 +930,7 @@ function getWeeklyRunningState(record, referenceDate = getReferenceDate()) {
 
   for (const item of history) {
     const paymentDate = new Date(`${item.date}T00:00:00`);
-    const paymentCycles = getWeeklyInterestPeriodsFromDate(record.dateGranted, paymentDate);
+    const paymentCycles = periodsFromDate(record.dateGranted, paymentDate);
     const cyclesSince = Math.max(0, paymentCycles - lastCycle);
     outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
@@ -906,7 +944,7 @@ function getWeeklyRunningState(record, referenceDate = getReferenceDate()) {
     lastCycle = paymentCycles;
   }
 
-  const currentCycles = getWeeklyInterestPeriodsFromDate(record.dateGranted, referenceDate);
+  const currentCycles = periodsFromDate(record.dateGranted, referenceDate);
   const cyclesSince = Math.max(0, currentCycles - lastCycle);
   outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
@@ -1911,6 +1949,14 @@ writeOffCancelBtn?.addEventListener("click", () => {
 writeOffModal?.addEventListener("click", (event) => {
   if (event.target === writeOffModal) {
     closeWriteOffModal(null);
+  }
+});
+
+clearBtn?.addEventListener("click", () => {
+  if (confirm("Delete all records? This cannot be undone.")) {
+    setRecords([]);
+    renderRecords();
+    showMessage("All records deleted.", "success");
   }
 });
 
