@@ -12,6 +12,9 @@ const DEFAULT_AUTH_SETTINGS = {
 };
 
 let currentOfficer = "";
+const OFFICER_VIEW_ACTIVE = "active";
+const OFFICER_VIEW_SETTLED = "settled";
+let currentOfficerView = OFFICER_VIEW_ACTIVE;
 
 const form = document.getElementById("loan-form");
 const message = document.getElementById("form-message");
@@ -28,6 +31,7 @@ const dateGrantedInput = document.getElementById("dateGranted");
 const interestRateInput = document.getElementById("interestRate");
 const filterNameInput = document.getElementById("filter-name");
 const filterDateGrantedInput = document.getElementById("filter-date-granted");
+const filterSearchDateInput = document.getElementById("filter-search-date");
 const sortBySelect = document.getElementById("sort-by");
 const filterPayableSelect = document.getElementById("filter-payable");
 const testDateInput = document.getElementById("test-date");
@@ -68,11 +72,25 @@ const themeOptions = document.querySelectorAll('input[name="theme-choice"]');
 const dashboardTotalLoans = document.getElementById("dashboard-total-loans");
 const dashboardTotalAmount = document.getElementById("dashboard-total-amount");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+const OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
 const ADDRESS_SUGGESTIONS_KEY = "mgi_saved_addresses";
 const MAX_ADDRESS_SUGGESTIONS = 20;
 const MAX_VISIBLE_ADDRESS_SUGGESTIONS = 6;
 const addressAutocompleteFields = Array.from(document.querySelectorAll("[data-address-autocomplete]"));
 const purposeLoanSelects = Array.from(document.querySelectorAll(".purpose-of-loan-select"));
+
+function getOfficerViewFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("view") === OFFICER_VIEW_SETTLED ? OFFICER_VIEW_SETTLED : OFFICER_VIEW_ACTIVE;
+  } catch {
+    return OFFICER_VIEW_ACTIVE;
+  }
+}
+
+function isSettledOfficerView() {
+  return currentOfficerView === OFFICER_VIEW_SETTLED;
+}
 
 function initPurposeLoanSelects() {
   purposeLoanSelects.forEach((select) => {
@@ -494,6 +512,7 @@ let hasUnsyncedLocalChanges = false;
 let pendingRetryTimer = null;
 let paymentEntryRowIndex = -1;
 let writeOffPasswordResolver = null;
+let openRemarksEditorRowIndex = -1;
 
 function getAuthSettings() {
   try {
@@ -522,6 +541,31 @@ function ensureSyncStatusElement() {
   return null;
 }
 
+function normalizeOfficerName(rawOfficer) {
+  const value = String(rawOfficer || "").trim();
+  if (!value) {
+    return OFFICER_NAMES[0];
+  }
+
+  const matched = OFFICER_NAMES.find((name) => name.toLowerCase() === value.toLowerCase());
+  return matched || OFFICER_NAMES[0];
+}
+
+function toOfficerSlug(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "junjun";
+}
+
+function getOfficerStorageKeyCandidates() {
+  const normalizedOfficer = normalizeOfficerName(currentOfficer);
+  const canonicalKey = `mgi_officer_records_${toOfficerSlug(normalizedOfficer)}`;
+  const legacyRawKey = `mgi_officer_records_${currentOfficer}`;
+  const fallbackUnknownKey = "mgi_officer_records_Unknown";
+  return Array.from(new Set([canonicalKey, legacyRawKey, fallbackUnknownKey]));
+}
+
 function setSyncStatus(state, detail) {
   const badge = ensureSyncStatusElement();
   if (!badge) {
@@ -544,7 +588,8 @@ function setSyncStatus(state, detail) {
 }
 
 function getOfficerStorageKey() {
-  return `mgi_officer_records_${currentOfficer}`;
+  const normalizedOfficer = normalizeOfficerName(currentOfficer);
+  return `mgi_officer_records_${toOfficerSlug(normalizedOfficer)}`;
 }
 
 function getRecords() {
@@ -552,8 +597,11 @@ function getRecords() {
 }
 
 function mirrorOfficerRecordsToLocalStorage(records) {
+  const payload = JSON.stringify(Array.isArray(records) ? records : []);
   try {
-    localStorage.setItem(getOfficerStorageKey(), JSON.stringify(Array.isArray(records) ? records : []));
+    getOfficerStorageKeyCandidates().forEach((key) => {
+      localStorage.setItem(key, payload);
+    });
   } catch {
     // Ignore localStorage quota/availability errors.
   }
@@ -561,9 +609,18 @@ function mirrorOfficerRecordsToLocalStorage(records) {
 
 function readOfficerRecordsFromLocalStorage() {
   try {
-    const raw = localStorage.getItem(getOfficerStorageKey());
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    for (const key of getOfficerStorageKeyCandidates()) {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        continue;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+    return [];
   } catch {
     return [];
   }
@@ -700,6 +757,30 @@ async function loadRecordsFromServer() {
     }
 
     if (data.payload === null) {
+      const shouldProtectUnsyncedData = hasUnsyncedLocalChanges && recordsCache.length > 0;
+      if (shouldProtectUnsyncedData) {
+        console.info("[sync][officer] Keeping unsynced local records while server has null payload", {
+          officer: currentOfficer,
+          cacheRecords: recordsCache.length,
+        });
+        setSyncStatus("error", "save pending retry");
+        schedulePendingSaveRetry();
+        return;
+      }
+
+      const shouldGuardNullOverwrite = (
+        recordsCache.length > 0 &&
+        Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
+      );
+      if (shouldGuardNullOverwrite) {
+        console.info("[sync][officer] Ignoring null server payload shortly after local change", {
+          officer: currentOfficer,
+          cacheRecords: recordsCache.length,
+        });
+        setSyncStatus("syncing", "waiting server update");
+        return;
+      }
+
       recordsCache = [];
       mirrorOfficerRecordsToLocalStorage(recordsCache);
       console.info("[sync][officer] Server has no payload yet", { officer: currentOfficer });
@@ -1099,7 +1180,7 @@ function showMessage(text, type = "success") {
 }
 
 function updateDashboardStats() {
-  const records = getRecords();
+  const records = getRecords().filter((record) => record?.isSettled !== true);
   const totalLoans = records.length;
   const totalAmount = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   
@@ -1138,7 +1219,7 @@ function renderRecords() {
   });
 
   if (filtered.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">No records yet.</td></tr>';
+    body.innerHTML = `<tr><td colspan="6" class="empty">${isSettledOfficerView() ? "No settled accounts yet." : "No records yet."}</td></tr>`;
     updateDashboardStats();
     return;
   }
@@ -1146,11 +1227,15 @@ function renderRecords() {
   body.innerHTML = filtered
     .map(({ record, index }) => {
       const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
+      const payDate = String(record.payDate || dueDate);
       const collectibleAmount = computeCollectibleAmount(record);
       const outstandingBalance = computeRemainingPayable(record);
       const totalPaidAmount = getTotalPaidAmount(record);
+      const paymentCount = getPaymentHistory(record).length;
       const effectiveInterestRate = getEffectiveInterestRate(record);
       const escapedRemarks = sanitize(String(record.remarks || ""));
+      const settledActive = record?.isSettled === true;
+      const settledDate = String(record?.settledDate || "").trim();
       const isWriteOffActive = record.isWriteOff === true;
       const writeOffFreezeDate = String(record.writeOffDate || "").trim();
       const hatagHatagActive = isHatagHatagActive(record);
@@ -1158,9 +1243,18 @@ function renderRecords() {
       return `
         <tr>
           <td>
-            <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
-            <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
-            <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+            <div class="borrower-name-row">
+              <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
+              <button type="button" class="btn-secondary borrower-edit-btn edit-name-btn" data-index="${index}">Edit</button>
+            </div>
+            <div class="borrower-contact-row">
+              <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
+              <button type="button" class="btn-secondary borrower-edit-btn edit-contact-btn" data-index="${index}">Edit</button>
+            </div>
+            <div class="borrower-address-row">
+              <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
+              <button type="button" class="btn-secondary borrower-edit-btn edit-address-btn" data-index="${index}">Edit</button>
+            </div>
           </td>
           <td>
             <div class="loan-info-purpose"><b>Purpose of Loan:</b> ${sanitize(String(record.purposeOfLoan || "-"))}</div>
@@ -1187,22 +1281,26 @@ function renderRecords() {
           </td>
           <td>${formatCurrency(outstandingBalance)}</td>
           <td>
-            <div class="paid-controls">
-              <button type="button" class="btn-pay pay-loan-btn" data-index="${index}">Pay</button>
-            </div>
-            <small class="mini-note">Total paid: ${formatCurrency(totalPaidAmount)}</small>
-            <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
-            <small class="mini-note">${getPaymentHistory(record).length} payment${getPaymentHistory(record).length === 1 ? "" : "s"}</small>
+            <button type="button" class="btn-secondary move-pay-date-display-btn" data-index="${index}">Move Pay Date: ${formatLongDate(payDate)}</button>
+            <input type="date" class="move-pay-date-input due-date-input-hidden" data-index="${index}" value="${sanitize(payDate)}" />
           </td>
           <td>
             <div class="remarks-controls">
-              <input type="text" class="remarks-input" data-index="${index}" value="${escapedRemarks}" placeholder="Add remarks..." autocomplete="off" />
-              <button type="button" class="btn-secondary save-remarks-btn" data-index="${index}">Save</button>
+              ${settledActive ? "" : `<button type="button" class="btn-pay pay-loan-btn" data-index="${index}">Pay</button>`}
+              <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
+              <button type="button" class="btn-secondary open-remarks-btn" data-index="${index}">Remarks: ${escapedRemarks || "-"}</button>
+              <div class="remarks-editor ${openRemarksEditorRowIndex === index ? "" : "remarks-editor-hidden"}" data-index="${index}">
+                <input type="text" class="remarks-input" data-index="${index}" value="${escapedRemarks}" placeholder="Add remarks..." autocomplete="off" />
+                <button type="button" class="btn-secondary save-remarks-btn" data-index="${index}">Save</button>
+              </div>
               <button type="button" class="statement-btn" data-index="${index}">Statement of Account</button>
-              <button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${isWriteOffActive ? "Write-Off Active" : "Write-Off"}</button>
-              <button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${hatagHatagActive ? "Hatag-Hatag Active" : "Hatag-Hatag"}</button>
+              ${settledActive ? "" : `<button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${isWriteOffActive ? "Write-Off Active" : "Write-Off"}</button>`}
+              ${settledActive ? "" : `<button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${hatagHatagActive ? "Hatag-Hatag Active" : "Hatag-Hatag"}</button>`}
+              ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}">Settle</button>`}
             </div>
-            ${isWriteOffActive
+            ${settledActive
+              ? `<small class="mini-note settled-note">Settled on ${sanitize(formatLongDate(settledDate || toIsoDate(getReferenceDate())))}</small>`
+              : isWriteOffActive
               ? `<small class="mini-note">Write-Off active since ${sanitize(formatLongDate(writeOffFreezeDate))}</small>`
               : hatagHatagActive
                 ? `<small class="mini-note">Hatag-Hatag active since ${sanitize(formatLongDate(hatagHatagDate))}</small>`
@@ -1220,12 +1318,21 @@ function getVisibleRecords() {
   const records = getRecords();
   const nameFilter = String(filterNameInput?.value || "").toLowerCase().trim();
   const dateFilter = String(filterDateGrantedInput?.value || "").trim();
+  const searchDateFilter = String(filterSearchDateInput?.value || "").trim();
   const payableFilter = String(filterPayableSelect?.value || "").trim();
   const filtered = records.map((record, index) => ({ record, index })).filter(({ record }) => {
+    const matchesView = isSettledOfficerView() ? record?.isSettled === true : record?.isSettled !== true;
     const matchesName = nameFilter === "" || String(record.name || "").toLowerCase().includes(nameFilter);
     const matchesDate = dateFilter === "" || String(record.dateGranted || "") === dateFilter;
+    const effectiveDueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
+    const effectivePayDate = String(record.payDate || effectiveDueDate);
+    const matchesSearchDate =
+      searchDateFilter === "" ||
+      String(record.dateGranted || "") === searchDateFilter ||
+      effectiveDueDate === searchDateFilter ||
+      effectivePayDate === searchDateFilter;
     const matchesPayable = payableFilter === "" || String(record.payableWithin || "") === payableFilter;
-    return matchesName && matchesDate && matchesPayable;
+    return matchesView && matchesName && matchesDate && matchesSearchDate && matchesPayable;
   });
 
   const sortBy = sortBySelect?.value || "nameAsc";
@@ -1264,6 +1371,23 @@ function toggleCollectibleEditor(rowIndex, forceOpen = false) {
   const currentlyOpen = !editor.classList.contains("collectible-editor-hidden");
   const shouldOpen = forceOpen ? true : !currentlyOpen;
   editor.classList.toggle("collectible-editor-hidden", !shouldOpen);
+}
+
+function toggleRemarksEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  const shouldOpen = forceOpen ? true : openRemarksEditorRowIndex !== rowIndex;
+  openRemarksEditorRowIndex = shouldOpen ? rowIndex : -1;
+  renderRecords();
+
+  if (shouldOpen) {
+    const remarksInputEl = body?.querySelector(`.remarks-input[data-index="${rowIndex}"]`);
+    if (remarksInputEl instanceof HTMLInputElement) {
+      remarksInputEl.focus();
+    }
+  }
 }
 
 function closePaymentHistoryModal() {
@@ -1820,11 +1944,14 @@ form?.addEventListener("submit", (e) => {
     amount: parseAmountInput(amountInput.value),
     dateGranted: String(dateGrantedInput.value || "").trim(),
     dueDate: "",
+    payDate: "",
     interestRate: Number(interestRateInput.value || 0),
     totalPaidAmount: 0,
     paidAmount: 0,
     paymentHistory: [],
     remarks: "",
+    isSettled: false,
+    settledDate: "",
     isWriteOff: false,
     writeOffDate: "",
     isHatagHatag: false,
@@ -1834,6 +1961,7 @@ form?.addEventListener("submit", (e) => {
   };
 
   newRecord.dueDate = computeDueDate(newRecord.dateGranted, newRecord.payableWithin);
+  newRecord.payDate = newRecord.dueDate;
 
   if (!newRecord.name || !newRecord.payableWithin || newRecord.amount <= 0) {
     showMessage("Please fill in all required fields.", "error");
@@ -1850,6 +1978,7 @@ form?.addEventListener("submit", (e) => {
 
 filterNameInput?.addEventListener("input", renderRecords);
 filterDateGrantedInput?.addEventListener("change", renderRecords);
+filterSearchDateInput?.addEventListener("change", renderRecords);
 sortBySelect?.addEventListener("change", renderRecords);
 filterPayableSelect?.addEventListener("change", renderRecords);
 payableWithinSelect?.addEventListener("change", syncModeOfPaymentWithLoanType);
@@ -1962,7 +2091,37 @@ clearBtn?.addEventListener("click", () => {
 
 body?.addEventListener("change", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLInputElement) || !target.classList.contains("due-date-input")) {
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (target.classList.contains("move-pay-date-input")) {
+    const rowIndex = Number(target.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to update pay date.", "error");
+      return;
+    }
+
+    const nextPayDate = String(target.value || "").trim();
+    if (!nextPayDate) {
+      showMessage("Please choose a valid pay date.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    records[rowIndex].payDate = nextPayDate;
+    setRecords(records);
+    renderRecords();
+    showMessage("Pay date updated.", "success");
+    return;
+  }
+
+  if (!target.classList.contains("due-date-input")) {
     return;
   }
 
@@ -1991,6 +2150,98 @@ body?.addEventListener("change", (event) => {
 });
 
 body?.addEventListener("click", async (event) => {
+  const editNameBtn = event.target.closest(".edit-name-btn");
+  if (editNameBtn) {
+    const rowIndex = Number(editNameBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    const currentName = String(record.name || "").trim();
+    const updatedName = window.prompt("Edit borrower name:", currentName);
+    if (updatedName === null) {
+      return;
+    }
+
+    const nextName = toUpperInputValue(updatedName).trim();
+    if (!nextName) {
+      showMessage("Borrower name cannot be empty.", "error");
+      return;
+    }
+
+    record.name = nextName;
+    setRecords(records);
+    renderRecords();
+    showMessage("Borrower name updated.", "success");
+    return;
+  }
+
+  const editContactBtn = event.target.closest(".edit-contact-btn");
+  if (editContactBtn) {
+    const rowIndex = Number(editContactBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    const currentContact = String(record.contactNumber || "").trim();
+    const updatedContact = window.prompt("Edit contact number:", currentContact);
+    if (updatedContact === null) {
+      return;
+    }
+
+    record.contactNumber = toUpperInputValue(updatedContact).trim();
+    setRecords(records);
+    renderRecords();
+    showMessage("Contact number updated.", "success");
+    return;
+  }
+
+  const editAddressBtn = event.target.closest(".edit-address-btn");
+  if (editAddressBtn) {
+    const rowIndex = Number(editAddressBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Invalid record selected.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    const currentAddress = String(record.address || "").trim();
+    const updatedAddress = window.prompt("Edit address:", currentAddress);
+    if (updatedAddress === null) {
+      return;
+    }
+
+    const nextAddress = toUpperInputValue(updatedAddress).trim();
+    record.address = nextAddress;
+    saveAddressSuggestions(nextAddress);
+    setRecords(records);
+    renderRecords();
+    showMessage("Address updated.", "success");
+    return;
+  }
+
   const collectibleDisplayBtn = event.target.closest(".collectible-display-btn");
   if (collectibleDisplayBtn) {
     const rowIndex = Number(collectibleDisplayBtn.dataset.index);
@@ -2058,6 +2309,28 @@ body?.addEventListener("click", async (event) => {
     return;
   }
 
+  const movePayDateDisplayBtn = event.target.closest(".move-pay-date-display-btn");
+  if (movePayDateDisplayBtn) {
+    const rowIndex = Number(movePayDateDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to update pay date.", "error");
+      return;
+    }
+
+    const movePayDateInputEl = body.querySelector(`.move-pay-date-input[data-index="${rowIndex}"]`);
+    if (!(movePayDateInputEl instanceof HTMLInputElement)) {
+      showMessage("Unable to open pay date picker.", "error");
+      return;
+    }
+
+    if (typeof movePayDateInputEl.showPicker === "function") {
+      movePayDateInputEl.showPicker();
+    } else {
+      movePayDateInputEl.click();
+    }
+    return;
+  }
+
   const saveRemarksBtn = event.target.closest(".save-remarks-btn");
   if (saveRemarksBtn) {
     const rowIndex = Number(saveRemarksBtn.dataset.index);
@@ -2076,8 +2349,21 @@ body?.addEventListener("click", async (event) => {
 
     records[rowIndex].remarks = nextRemarks;
     setRecords(records);
+    openRemarksEditorRowIndex = -1;
     renderRecords();
     showMessage("Remarks saved.", "success");
+    return;
+  }
+
+  const openRemarksBtn = event.target.closest(".open-remarks-btn");
+  if (openRemarksBtn) {
+    const rowIndex = Number(openRemarksBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to open remarks editor.", "error");
+      return;
+    }
+
+    toggleRemarksEditor(rowIndex);
     return;
   }
 
@@ -2230,6 +2516,44 @@ body?.addEventListener("click", async (event) => {
     setRecords(records);
     renderRecords();
     showMessage("Hatag-Hatag activated. Interest growth is stopped and payments are logged in history only.", "success");
+    return;
+  }
+
+  const settleBtn = event.target.closest(".settle-btn");
+  if (settleBtn) {
+    const rowIndex = Number(settleBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to settle account.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    if (record.isSettled === true) {
+      showMessage("This account is already settled.", "success");
+      return;
+    }
+
+    const password = await requestWriteOffPassword();
+    if (password === null) {
+      return;
+    }
+
+    if (String(password).trim() !== getWriteOffPassword()) {
+      showMessage("Invalid password. Settle cancelled.", "error");
+      return;
+    }
+
+    record.isSettled = true;
+    record.settledDate = toIsoDate(getReferenceDate());
+    setRecords(records);
+    renderRecords();
+    showMessage("Account settled.", "success");
     return;
   }
 });
@@ -2484,7 +2808,16 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
 } else {
   // Get officer name from URL parameter
   const params = new URLSearchParams(window.location.search);
-  currentOfficer = params.get("officer") || "Unknown";
+  const requestedOfficer = params.get("officer") || "";
+  currentOfficer = normalizeOfficerName(requestedOfficer);
+  currentOfficerView = getOfficerViewFromLocation();
+
+  if (requestedOfficer !== currentOfficer) {
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.set("officer", currentOfficer);
+    const nextUrl = `${window.location.pathname}?${nextParams.toString()}`;
+    window.history.replaceState({}, "", nextUrl);
+  }
   
   if (pageTitle) {
     pageTitle.textContent = `${currentOfficer} DASHBOARD`;

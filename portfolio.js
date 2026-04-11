@@ -48,6 +48,11 @@ const OFFICER_STORAGE_KEY_PREFIX = "mgi_officer_records_";
 let recordsCache = [];
 let didLoadServerRecords = false;
 
+const OFFICER_SLUG_TO_NAME = OFFICER_NAMES.reduce((acc, name) => {
+  acc[toOfficerSlug(name)] = name;
+  return acc;
+}, {});
+
 const officerSummaryCards = [
   { valueEl: officerCountJunJun, fallbackName: "JunJun" },
   { valueEl: officerCountAga, fallbackName: "Aga" },
@@ -61,8 +66,37 @@ const officerSummaryCards = [
   metaEl: item.valueEl?.closest("article")?.querySelector("p") || null,
 }));
 
+function toOfficerSlug(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeOfficerName(rawOfficer) {
+  const value = String(rawOfficer || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const directMatch = OFFICER_NAMES.find((name) => name.toLowerCase() === value.toLowerCase());
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const slugMatch = OFFICER_SLUG_TO_NAME[toOfficerSlug(value)];
+  return slugMatch || value;
+}
+
+function getOfficerStorageKeys(officerName) {
+  const normalized = normalizeOfficerName(officerName) || String(officerName || "").trim();
+  const canonical = `mgi_officer_records_${toOfficerSlug(normalized)}`;
+  const legacy = `mgi_officer_records_${normalized}`;
+  return Array.from(new Set([canonical, legacy]));
+}
+
 function getOfficerStorageKey(officerName) {
-  return `mgi_officer_records_${officerName}`;
+  return getOfficerStorageKeys(officerName)[0];
 }
 
 function getKnownOfficerNames() {
@@ -73,7 +107,7 @@ function getKnownOfficerNames() {
       if (!key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) {
         continue;
       }
-      const officerName = key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim();
+      const officerName = normalizeOfficerName(key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim());
       if (officerName) {
         names.add(officerName);
       }
@@ -123,12 +157,13 @@ function readCachedStateRecords(stateKey) {
 
 function getLocalOfficerRecords() {
   const merged = getKnownOfficerNames().flatMap((officerName) => {
-    const stateKey = getOfficerStorageKey(officerName);
-    const records = readCachedStateRecords(stateKey);
-    return records.map((record) => ({
-      ...record,
-      accountOfficer: String(record?.accountOfficer || "").trim() || officerName,
-    }));
+    const allRecords = getOfficerStorageKeys(officerName)
+      .flatMap((stateKey) => readCachedStateRecords(stateKey))
+      .map((record) => ({
+        ...record,
+        accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
+      }));
+    return dedupeRecords(allRecords);
   });
 
   return dedupeRecords(merged);
@@ -212,16 +247,15 @@ function getRecords() {
 
 async function loadRecordsFromServer() {
   const officerNames = getKnownOfficerNames();
-  const officerStateKeys = officerNames.map(getOfficerStorageKey);
 
   try {
     const [officerPayloads, globalRecords] = await Promise.all([
       Promise.all(
-        officerStateKeys.map((stateKey, index) => loadStateRecords(stateKey).then((records) => {
-          const officerName = officerNames[index];
-          return records.map((record) => ({
+        officerNames.map((officerName) => Promise.all(getOfficerStorageKeys(officerName).map((stateKey) => loadStateRecords(stateKey))).then((payloads) => {
+          const mergedOfficerPayload = dedupeRecords(payloads.flat());
+          return mergedOfficerPayload.map((record) => ({
             ...record,
-            accountOfficer: String(record?.accountOfficer || "").trim() || officerName,
+            accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
           }));
         }))
       ),
@@ -371,6 +405,18 @@ function getWeeklyInterestPeriodsFromDate(dateGranted, referenceDate) {
   return Math.max(0, Math.floor(diffDays(startDate, referenceDay) / 7));
 }
 
+function getEmergencyFixedInterestPeriodsFromDate(dateGranted, referenceDate) {
+  const startDate = new Date(`${dateGranted}T00:00:00`);
+  const referenceDay = toStartOfDayDate(referenceDate);
+
+  if (Number.isNaN(startDate.getTime()) || !referenceDay) {
+    return 1;
+  }
+
+  const elapsedDays = Math.max(0, diffDays(startDate, referenceDay));
+  return Math.max(1, Math.ceil(elapsedDays / 7));
+}
+
 function compareIsoDate(a, b) {
   const aTime = a ? new Date(`${a}T00:00:00`).getTime() : 0;
   const bTime = b ? new Date(`${b}T00:00:00`).getTime() : 0;
@@ -379,6 +425,9 @@ function compareIsoDate(a, b) {
 
 function getWeeklyRunningState(record, referenceDate = new Date()) {
   const effectiveInterestRate = Number(record.interestRate || 0) / 100;
+  const periodsFromDate = record.payableWithin === "emergency_fixed"
+    ? getEmergencyFixedInterestPeriodsFromDate
+    : getWeeklyInterestPeriodsFromDate;
   const history = [...getPaymentHistory(record)]
     .filter((item) => {
       if (!item?.date) {
@@ -396,7 +445,7 @@ function getWeeklyRunningState(record, referenceDate = new Date()) {
 
   for (const item of history) {
     const paymentDate = new Date(`${item.date}T00:00:00`);
-    const paymentCycles = getWeeklyInterestPeriodsFromDate(record.dateGranted, paymentDate);
+    const paymentCycles = periodsFromDate(record.dateGranted, paymentDate);
     const cyclesSince = Math.max(0, paymentCycles - lastCycle);
     outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
@@ -410,7 +459,7 @@ function getWeeklyRunningState(record, referenceDate = new Date()) {
     lastCycle = paymentCycles;
   }
 
-  const currentCycles = getWeeklyInterestPeriodsFromDate(record.dateGranted, referenceDate);
+  const currentCycles = periodsFromDate(record.dateGranted, referenceDate);
   const cyclesSince = Math.max(0, currentCycles - lastCycle);
   outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
@@ -632,11 +681,11 @@ function renderTypeBreakdown(records) {
 }
 
 function getOfficerNameFromRecord(record) {
-  const directName = String(record?.accountOfficer || "").trim();
+  const directName = normalizeOfficerName(String(record?.accountOfficer || "").trim());
   if (directName) {
     return directName;
   }
-  const fallbackName = String(record?.officerName || record?.officer || "").trim();
+  const fallbackName = normalizeOfficerName(String(record?.officerName || record?.officer || "").trim());
   return fallbackName;
 }
 
@@ -767,11 +816,13 @@ function renderReleasedInterestBreakdown(records) {
 function renderPortfolio() {
   const allRecords = getRecords();
   const records = getPortfolioFilteredRecords(allRecords);
-  const totalReleased = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
-  const totalEarnedInterest = records.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
-  const totalOutstanding = records.reduce((sum, record) => sum + computeOutstandingBalance(record), 0);
+  const activeRecords = records.filter((record) => record?.isSettled !== true);
+  const activeAllRecords = allRecords.filter((record) => record?.isSettled !== true);
+  const totalReleased = activeRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const totalEarnedInterest = activeRecords.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
+  const totalOutstanding = activeRecords.reduce((sum, record) => sum + computeOutstandingBalance(record), 0);
   const todayIso = new Date().toISOString().slice(0, 10);
-  const pastDueCount = records.filter((record) => isPastDueRecord(record, todayIso)).length;
+  const pastDueCount = activeRecords.filter((record) => isPastDueRecord(record, todayIso)).length;
 
   if (portfolioTotal) {
     portfolioTotal.textContent = formatCurrency(totalReleased);
@@ -783,10 +834,10 @@ function renderPortfolio() {
     portfolioTotalOutstanding.textContent = formatCurrency(totalOutstanding);
   }
   if (portfolioMeta) {
-    portfolioMeta.textContent = `${records.length} released loan${records.length === 1 ? "" : "s"}`;
+    portfolioMeta.textContent = `${activeRecords.length} released loan${activeRecords.length === 1 ? "" : "s"}`;
   }
   if (portfolioCount) {
-    portfolioCount.textContent = String(records.length);
+    portfolioCount.textContent = String(activeRecords.length);
   }
   if (portfolioPastDueCount) {
     portfolioPastDueCount.textContent = String(pastDueCount);
@@ -795,13 +846,13 @@ function renderPortfolio() {
     portfolioAverage.textContent = formatCurrency(totalReleased);
   }
 
-  renderReleasedInterestBreakdown(records);
+  renderReleasedInterestBreakdown(activeRecords);
 
-  renderTypeBreakdown(records);
+  renderTypeBreakdown(activeRecords);
 
-  renderDailyCollections(allRecords);
+  renderDailyCollections(activeAllRecords);
 
-  renderOfficerCounts(allRecords);
+  renderOfficerCounts(activeAllRecords);
 }
 
 portfolioDateFilterInput?.addEventListener("change", () => {

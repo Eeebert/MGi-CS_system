@@ -19,7 +19,7 @@
   <body>
     <div id="loading-screen" class="loading-screen">
       <div class="login-shell">
-        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" />
+        <img src="images/loading_logo.png" alt="Loading" class="loading-logo" id="login-logo-trigger" role="button" tabindex="0" aria-label="Show admin dashboard button" />
         <form id="login-form" class="login-form" novalidate>
           <h2>Login</h2>
           <label>
@@ -36,7 +36,7 @@
             </div>
           </label>
           <button type="submit" class="btn-primary login-submit">Log In</button>
-          <button type="button" class="btn-secondary login-submit" onclick="window.location.href='admin.html'">Admin Dashboard</button>
+          <button type="button" class="btn-secondary login-submit" id="admin-login-button" onclick="window.location.href='admin.html'" hidden>Admin Dashboard</button>
           <p id="login-message" class="login-message" role="status" aria-live="polite"></p>
         </form>
       </div>
@@ -79,13 +79,13 @@
 
             <label>
               <span>Middle Initial</span>
-              <input type="text" id="middleInitial" name="middleInitial" placeholder="M" maxlength="1" required />
+              <input type="text" id="middleInitial" name="middleInitial" placeholder="M" maxlength="1" />
             </label>
 
             <label>
               <span>Address</span>
               <div class="address-autocomplete" data-address-autocomplete>
-                <input type="text" id="address" name="address" placeholder="Enter address" autocomplete="off" required />
+                <input type="text" id="address" name="address" placeholder="Enter address" autocomplete="off" />
                 <div class="address-suggestions-panel" role="listbox" aria-label="Saved addresses">
                   <div class="address-suggestions-list"></div>
                   <div class="address-suggestions-empty">Saved addresses will appear here after you save one.</div>
@@ -116,7 +116,7 @@
 
             <label>
               <span>Contact Number</span>
-              <input type="text" id="contactNumber" name="contactNumber" placeholder="Enter contact number" required />
+              <input type="text" id="contactNumber" name="contactNumber" placeholder="Enter contact number" />
             </label>
 
             <label>
@@ -257,8 +257,7 @@
             </label>
             <button id="use-today" class="btn-secondary" type="button">Use Today</button>
             <button id="export-word" class="btn-secondary" type="button">Print to Word (.doc)</button>
-            <!-- Delete All button intentionally removed. To restore, re-add:
-                 <button id="clear-records" class="btn-danger" type="button">Delete All</button> -->
+            <button id="clear-records" class="btn-danger is-hidden" type="button">Delete Checked</button>
           </div>
         </div>
 
@@ -272,11 +271,12 @@
                 <th>Pay Date</th>
                 <th>Outstanding Balance</th>
                 <th>ACTIONS</th>
+                <th class="settled-select-header">Select</th>
               </tr>
             </thead>
             <tbody id="records-body">
               <tr>
-                <td colspan="6" class="empty">No records yet.</td>
+                <td colspan="7" class="empty">No records yet.</td>
               </tr>
             </tbody>
           </table>
@@ -422,7 +422,7 @@
     </aside>
 
     <script src="client-security.js"></script>
-    <script src="app.js?v=20260408a"></script>
+    <script src="app.js?v=20260411j"></script>
     <script src="pwa-init.js"></script>
   </body>
 </html>

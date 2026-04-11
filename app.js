@@ -673,6 +673,7 @@ let diagnosticsMetaElement = null;
 let diagnosticsDebugElement = null;
 let latestSyncIssue = "";
 let recordsCache = [];
+const selectedSettledRecordFingerprints = new Set();
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
@@ -707,11 +708,46 @@ function getSettledDashboardRecords(records) {
 }
 
 function getRecordsForCurrentDashboardView(records) {
-  return isSettledDashboardView ? getSettledDashboardRecords(records) : getActiveDashboardRecords(records);
+  if (isSettledDashboardView) {
+    const mainSettled = getSettledDashboardRecords(records);
+    const officerSettled = getSettledDashboardRecords(getLocalOfficerRecords());
+    return dedupeRecords([...mainSettled, ...officerSettled]);
+  }
+
+  return getActiveDashboardRecords(records);
+}
+
+function toOfficerSlug(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeOfficerName(rawOfficer) {
+  const value = String(rawOfficer || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const directMatch = DEFAULT_OFFICER_NAMES.find((name) => name.toLowerCase() === value.toLowerCase());
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const slugMatch = DEFAULT_OFFICER_NAMES.find((name) => toOfficerSlug(name) === toOfficerSlug(value));
+  return slugMatch || value;
+}
+
+function getOfficerStorageKeys(officerName) {
+  const normalized = normalizeOfficerName(officerName) || String(officerName || "").trim();
+  const canonical = `${OFFICER_STORAGE_KEY_PREFIX}${toOfficerSlug(normalized)}`;
+  const legacy = `${OFFICER_STORAGE_KEY_PREFIX}${normalized}`;
+  return Array.from(new Set([canonical, legacy]));
 }
 
 function getOfficerStorageKey(officerName) {
-  return `${OFFICER_STORAGE_KEY_PREFIX}${officerName}`;
+  return getOfficerStorageKeys(officerName)[0];
 }
 
 function getKnownOfficerNames() {
@@ -722,7 +758,7 @@ function getKnownOfficerNames() {
       if (!key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) {
         continue;
       }
-      const officerName = key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim();
+      const officerName = normalizeOfficerName(key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim());
       if (officerName) {
         officerNames.add(officerName);
       }
@@ -760,6 +796,48 @@ function dedupeRecords(records) {
   return merged;
 }
 
+function setSettledRecordChecked(record, checked) {
+  const fingerprint = buildRecordFingerprint(record);
+  if (!fingerprint) {
+    return;
+  }
+
+  if (checked) {
+    selectedSettledRecordFingerprints.add(fingerprint);
+  } else {
+    selectedSettledRecordFingerprints.delete(fingerprint);
+  }
+
+  updateSettledDeleteButtonState();
+}
+
+function pruneSettledRecordSelection(records) {
+  if (!isSettledDashboardView) {
+    selectedSettledRecordFingerprints.clear();
+    updateSettledDeleteButtonState();
+    return;
+  }
+
+  const visibleFingerprints = new Set((Array.isArray(records) ? records : []).map((record) => buildRecordFingerprint(record)));
+  Array.from(selectedSettledRecordFingerprints).forEach((fingerprint) => {
+    if (!visibleFingerprints.has(fingerprint)) {
+      selectedSettledRecordFingerprints.delete(fingerprint);
+    }
+  });
+
+  updateSettledDeleteButtonState();
+}
+
+function updateSettledDeleteButtonState() {
+  if (!clearBtn) {
+    return;
+  }
+
+  clearBtn.textContent = isSettledDashboardView ? "Delete Checked" : "Delete All";
+  clearBtn.classList.toggle("is-hidden", !isSettledDashboardView);
+  clearBtn.disabled = isSettledDashboardView && selectedSettledRecordFingerprints.size === 0;
+}
+
 function readCachedStateRecords(stateKey) {
   try {
     const raw = localStorage.getItem(stateKey);
@@ -770,12 +848,109 @@ function readCachedStateRecords(stateKey) {
   }
 }
 
+function mirrorStateRecordsToLocalStorage(stateKey, records) {
+  try {
+    localStorage.setItem(stateKey, JSON.stringify(Array.isArray(records) ? records : []));
+  } catch {
+    // Ignore localStorage quota/availability errors.
+  }
+}
+
+async function syncStateRecordsByKey(stateKey, records) {
+  const payload = Array.isArray(records) ? records : [];
+  try {
+    const res = await fetchStateApi(stateKey, {
+      method: "PUT",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload }),
+    }, false);
+
+    if (!res.ok) {
+      let errorDetail = "";
+      try {
+        const errBody = await res.json();
+        errorDetail = errBody?.detail || errBody?.error || "";
+      } catch {}
+      throw new Error(`Failed to sync records (${res.status})${errorDetail ? `: ${errorDetail}` : ""}`);
+    }
+
+    return { ok: true, message: "" };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Cannot save to server right now.",
+    };
+  }
+}
+
+async function deleteSelectedSettledRecords() {
+  const selectedFingerprints = new Set(selectedSettledRecordFingerprints);
+  if (selectedFingerprints.size === 0) {
+    showMessage("Select at least one settled account to delete.", "error");
+    return;
+  }
+
+  const confirmed = window.confirm("Delete the checked settled accounts?");
+  if (!confirmed) {
+    return;
+  }
+
+  const nextMainRecords = recordsCache.filter(
+    (record) => !(isSettledRecord(record) && selectedFingerprints.has(buildRecordFingerprint(record)))
+  );
+
+  const officerUpdates = [];
+  getKnownOfficerNames().forEach((officerName) => {
+    getOfficerStorageKeys(officerName).forEach((stateKey) => {
+      const currentRecords = readCachedStateRecords(stateKey);
+      if (currentRecords.length === 0) {
+        return;
+      }
+
+      const nextOfficerRecords = currentRecords.filter((record) => {
+        const normalizedRecord = {
+          ...record,
+          accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
+        };
+
+        return !(isSettledRecord(normalizedRecord) && selectedFingerprints.has(buildRecordFingerprint(normalizedRecord)));
+      });
+
+      if (nextOfficerRecords.length === currentRecords.length) {
+        return;
+      }
+
+      mirrorStateRecordsToLocalStorage(stateKey, nextOfficerRecords);
+      officerUpdates.push({ stateKey, records: nextOfficerRecords });
+    });
+  });
+
+  setRecords(nextMainRecords);
+
+  const syncResults = await Promise.all(
+    officerUpdates.map(({ stateKey, records }) => syncStateRecordsByKey(stateKey, records))
+  );
+
+  selectedSettledRecordFingerprints.clear();
+  renderRecords();
+
+  const failedSync = syncResults.find((result) => !result.ok);
+  if (failedSync) {
+    showMessage(`Checked settled accounts deleted locally, but some officer sync updates failed: ${failedSync.message}`, "error");
+    return;
+  }
+
+  showMessage("Checked settled accounts deleted.", "success");
+  showToast("Settled accounts deleted", "success");
+}
+
 function getLocalOfficerRecords() {
   const merged = getKnownOfficerNames().flatMap((officerName) => {
-    const records = readCachedStateRecords(getOfficerStorageKey(officerName));
-    return records.map((record) => ({
+    const records = getOfficerStorageKeys(officerName).flatMap((key) => readCachedStateRecords(key));
+    return dedupeRecords(records).map((record) => ({
       ...record,
-      accountOfficer: String(record?.accountOfficer || "").trim() || officerName,
+      accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
     }));
   });
 
@@ -1069,7 +1244,13 @@ function setSyncDebug(partial) {
 }
 
 function getRecords() {
-  return Array.isArray(recordsCache) ? recordsCache : [];
+  const baseRecords = Array.isArray(recordsCache) ? recordsCache : [];
+  if (!isSettledDashboardView) {
+    return baseRecords;
+  }
+
+  const officerSettledRecords = getSettledDashboardRecords(getLocalOfficerRecords());
+  return dedupeRecords([...baseRecords, ...officerSettledRecords]);
 }
 
 function mirrorRecordsToLocalStorage(records) {
@@ -3704,7 +3885,8 @@ function renderRecords() {
   }
 
   if (rows.length === 0) {
-    body.innerHTML = `<tr><td colspan="6" class="empty">${isSettledDashboardView ? "No settled accounts yet." : "No records yet."}</td></tr>`;
+    pruneSettledRecordSelection([]);
+    body.innerHTML = `<tr><td colspan="7" class="empty">${isSettledDashboardView ? "No settled accounts yet." : "No records yet."}</td></tr>`;
     const hasActiveFilter = hasActiveFilters(activeFilters);
 
     if (viewRecords.length > 0 && hasActiveFilter) {
@@ -3725,6 +3907,8 @@ function renderRecords() {
     return;
   }
 
+  pruneSettledRecordSelection(viewRecords);
+
   body.innerHTML = rows
     .map(
       ({ record, index, dueDate, effectiveDueDate, isPastDue, daysPastDue }) => {
@@ -3743,6 +3927,7 @@ function renderRecords() {
         const hatagHatagActive = isHatagHatagActive(record);
         const hatagHatagDate = String(record.hatagHatagDate || "").trim();
         const settledActive = isSettledRecord(record);
+        const isChecked = selectedSettledRecordFingerprints.has(buildRecordFingerprint(record));
         const settledDate = String(record.settledDate || "").trim();
         const escapedRemarks = sanitize(record.remarks || "");
         const paymentCount = paymentHistory.length;
@@ -3848,6 +4033,9 @@ function renderRecords() {
             ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}">Settle</button>`}
           </div>
         </td>
+        <td class="settled-select-cell">
+          ${settledActive ? `<label class="settled-select-control"><input type="checkbox" class="settled-record-checkbox" data-index="${index}" aria-label="Select settled account" ${isChecked ? "checked" : ""} /></label>` : ""}
+        </td>
       </tr>
     `;
       }
@@ -3865,9 +4053,7 @@ function applyDashboardViewState() {
     recordsSectionTitle.textContent = isSettledDashboardView ? "Settled Accounts" : "Active Accounts";
   }
 
-  if (clearBtn) {
-    clearBtn.textContent = "Delete All";
-  }
+  updateSettledDeleteButtonState();
 
   if (toggleLoanEntryBtn) {
     toggleLoanEntryBtn.classList.toggle("is-hidden", isSettledDashboardView);
@@ -3885,6 +4071,15 @@ function showMessage(text, type) {
   message.className = `form-message ${type}`;
 }
 
+function isDashboard2Page() {
+  try {
+    return String(window.location.pathname || "").toLowerCase().endsWith("/dashboard2.html")
+      || String(window.location.pathname || "").toLowerCase().endsWith("dashboard2.html");
+  } catch {
+    return document.body?.classList.contains("dashboard2") === true;
+  }
+}
+
 function sanitize(value) {
   return value
     .replaceAll("&", "&amp;")
@@ -3898,6 +4093,11 @@ function formatName(lastName, firstName, middleInitial) {
   const cleanLast = sanitize(lastName.trim());
   const cleanFirst = sanitize(firstName.trim());
   const cleanMiddle = sanitize(middleInitial.trim().charAt(0).toUpperCase());
+
+  if (!cleanMiddle) {
+    return `${cleanLast}, ${cleanFirst}`;
+  }
+
   return `${cleanLast}, ${cleanFirst}, ${cleanMiddle}.`;
 }
 
@@ -3967,6 +4167,12 @@ function authenticateUser(username, password) {
   if (username === auth.mainUsername && password === auth.mainPassword) {
     return "main";
   }
+  if (
+    (username === auth.dashboard2Username && password === auth.dashboard2Password)
+    || (username === DEFAULT_AUTH_SETTINGS.dashboard2Username && password === DEFAULT_AUTH_SETTINGS.dashboard2Password)
+  ) {
+    return "dashboard2";
+  }
   if (username === auth.portfolioUsername && password === auth.portfolioPassword) {
     return "portfolio";
   }
@@ -4006,15 +4212,6 @@ form.addEventListener("submit", (event) => {
   if (!firstName) {
     missingFields.push("First Name");
   }
-  if (!middleInitial) {
-    missingFields.push("Middle Initial");
-  }
-  if (!address) {
-    missingFields.push("Address");
-  }
-  if (!contactNumber) {
-    missingFields.push("Contact Number");
-  }
   if (!purposeOfLoan) {
     missingFields.push("Purpose of Loan");
   }
@@ -4039,7 +4236,7 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
-  if (!/^[A-Za-z]$/.test(middleInitial)) {
+  if (middleInitial && !/^[A-Za-z]$/.test(middleInitial)) {
     showMessage("Middle Initial must be one letter.", "error");
     return;
   }
@@ -4091,6 +4288,11 @@ form.addEventListener("submit", (event) => {
 });
 
 clearBtn?.addEventListener("click", () => {
+  if (isSettledDashboardView) {
+    deleteSelectedSettledRecords();
+    return;
+  }
+
   const records = getRecords();
   if (records.length === 0) {
     showMessage("No records to delete.", "error");
@@ -4146,6 +4348,20 @@ body.addEventListener("input", (event) => {
 body.addEventListener("change", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.classList.contains("settled-record-checkbox")) {
+    const rowIndex = Number(target.dataset.index);
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record no longer exists.", "error");
+      renderRecords();
+      return;
+    }
+
+    setSettledRecordChecked(record, target.checked);
     return;
   }
 
@@ -5327,10 +5543,11 @@ applyDashboardViewState();
 refreshBackupHealthStatus();
 
 function revealAdminLoginButton() {
-  if (!adminLoginButton) {
+  if (!adminLoginButton || !loginLogoTrigger) {
     return;
   }
   adminLoginButton.hidden = !adminLoginButton.hidden;
+  loginLogoTrigger.setAttribute("aria-label", adminLoginButton.hidden ? "Show admin dashboard button" : "Hide admin dashboard button");
 }
 
 loginLogoTrigger?.addEventListener("click", revealAdminLoginButton);
@@ -5363,6 +5580,20 @@ loginForm?.addEventListener("submit", (event) => {
     setLoginMessage("Login successful.", true);
     hideLoadingScreen();
     updatePortfolioButtonVisibility();
+    return;
+  }
+
+  if (authType === "dashboard2") {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+    sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+    if (isDashboard2Page()) {
+      setLoginMessage("Login successful.", true);
+      hideLoadingScreen();
+      updatePortfolioButtonVisibility();
+      return;
+    }
+
+    window.location.href = "dashboard2.html";
     return;
   }
   

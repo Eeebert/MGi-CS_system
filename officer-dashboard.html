@@ -62,6 +62,10 @@
                 <input type="date" id="filter-date-granted" />
               </label>
               <label class="filter-control">
+                <span>Search Date</span>
+                <input type="date" id="filter-search-date" />
+              </label>
+              <label class="filter-control">
                 <span>Sort By</span>
                 <select id="sort-by">
                   <option value="nameAsc">Name (A-Z)</option>
@@ -96,8 +100,8 @@
                   <th>Loan Info</th>
                   <th>Amount</th>
                   <th>Outstanding Balance</th>
-                  <th>Paid Amount</th>
-                  <th>Remarks</th>
+                  <th>Pay Date</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="records-body">
@@ -125,7 +129,7 @@
             <label>
               <span>Address</span>
               <div class="address-autocomplete" data-address-autocomplete>
-                <input type="text" id="address" name="address" placeholder="" autocomplete="off" required />
+                <input type="text" id="address" name="address" placeholder="" autocomplete="off" />
                 <div class="address-suggestions-panel" role="listbox" aria-label="Saved addresses">
                   <div class="address-suggestions-list"></div>
                   <div class="address-suggestions-empty">Saved addresses will appear here after you save one.</div>
@@ -134,7 +138,7 @@
             </label>
             <label>
               <span>Contact</span>
-              <input type="tel" id="contactNumber" name="contactNumber" placeholder="" required />
+              <input type="tel" id="contactNumber" name="contactNumber" placeholder="" />
             </label>
             <label>
               <span>Purpose of Loan</span>
@@ -294,6 +298,6 @@
 
     <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>
-    <script src="officer-dashboard.js?v=20260406c"></script>
+    <script src="officer-dashboard.js?v=20260411e"></script>
   </body>
 </html>

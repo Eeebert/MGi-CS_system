@@ -1764,6 +1764,33 @@ button:active {
   color: var(--muted);
 }
 
+.settled-select-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  width: 100%;
+}
+
+.settled-record-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: #b42318;
+}
+
+.settled-select-header {
+  width: 64px;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 0.68rem;
+}
+
+.settled-select-cell {
+  text-align: center;
+  vertical-align: middle;
+  width: 64px;
+}
+
 .test-date-control input,
 .filter-control input,
 .filter-control select {
@@ -1896,12 +1923,7 @@ tbody tr.past-due-row:hover {
   justify-self: start;
 }
 
-.remarks-controls .save-paid-btn,
-.remarks-controls .show-payment-history-btn,
-.remarks-controls .statement-btn,
-.remarks-controls .write-off-btn,
-.remarks-controls .hatag-hatag-btn,
-.remarks-controls .settle-btn {
+.remarks-controls button {
   min-height: 22px;
   padding: 0.14rem 0.26rem;
   font-size: 0.54rem;
@@ -1912,12 +1934,7 @@ tbody tr.past-due-row:hover {
   border: 1px solid rgba(126, 152, 170, 0.32);
 }
 
-.remarks-controls .save-paid-btn:hover,
-.remarks-controls .show-payment-history-btn:hover,
-.remarks-controls .statement-btn:hover,
-.remarks-controls .write-off-btn:hover,
-.remarks-controls .hatag-hatag-btn:hover,
-.remarks-controls .settle-btn:hover {
+.remarks-controls button:hover {
   filter: saturate(1.08);
 }
 
@@ -3039,12 +3056,7 @@ body.officer-page #loan-entry-panel {
     border-radius: 999px;
   }
 
-  .records-panel td:last-child .remarks-controls .save-paid-btn,
-  .records-panel td:last-child .remarks-controls .show-payment-history-btn,
-  .records-panel td:last-child .remarks-controls .statement-btn,
-  .records-panel td:last-child .remarks-controls .write-off-btn,
-  .records-panel td:last-child .remarks-controls .hatag-hatag-btn,
-  .records-panel td:last-child .remarks-controls .settle-btn {
+  .records-panel td:last-child .remarks-controls button {
     min-height: 18px;
     padding: 0.05rem 0.08rem;
     font-size: 0.34rem;

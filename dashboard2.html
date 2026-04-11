@@ -79,13 +79,13 @@
 
             <label>
               <span>Middle Initial</span>
-              <input type="text" id="middleInitial" name="middleInitial" placeholder="M" maxlength="1" required />
+              <input type="text" id="middleInitial" name="middleInitial" placeholder="M" maxlength="1" />
             </label>
 
             <label>
               <span>Address</span>
               <div class="address-autocomplete" data-address-autocomplete>
-                <input type="text" id="address" name="address" placeholder="Enter address" autocomplete="off" required />
+                <input type="text" id="address" name="address" placeholder="Enter address" autocomplete="off" />
                 <div class="address-suggestions-panel" role="listbox" aria-label="Saved addresses">
                   <div class="address-suggestions-list"></div>
                   <div class="address-suggestions-empty">Saved addresses will appear here after you save one.</div>
@@ -116,7 +116,7 @@
 
             <label>
               <span>Contact Number</span>
-              <input type="text" id="contactNumber" name="contactNumber" placeholder="Enter contact number" required />
+              <input type="text" id="contactNumber" name="contactNumber" placeholder="Enter contact number" />
             </label>
 
             <label>
@@ -257,6 +257,7 @@
             </label>
             <button id="use-today" class="btn-secondary" type="button">Use Today</button>
             <button id="export-word" class="btn-secondary" type="button">Print to Word (.doc)</button>
+            <button id="clear-records" class="btn-danger is-hidden" type="button">Delete Checked</button>
           </div>
         </div>
 
@@ -270,11 +271,12 @@
                 <th>Pay Date</th>
                 <th>Outstanding Balance</th>
                 <th>ACTIONS</th>
+                <th class="settled-select-header">Select</th>
               </tr>
             </thead>
             <tbody id="records-body">
               <tr>
-                <td colspan="6" class="empty">No records yet.</td>
+                <td colspan="7" class="empty">No records yet.</td>
               </tr>
             </tbody>
           </table>
@@ -421,7 +423,7 @@
     </aside>
 
     <script src="client-security.js"></script>
-    <script src="app.js?v=20260408a"></script>
+    <script src="app.js?v=20260411j"></script>
     <script src="pwa-init.js"></script>
   </body>
 </html>
