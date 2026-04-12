@@ -3087,10 +3087,10 @@ body.officer-page #loan-entry-panel {
 
   .records-panel td:last-child .remarks-controls {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 0.12rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.2rem;
     overflow: visible;
-    padding: 0.02rem 0 0.08rem;
+    padding: 0.04rem 0 0.1rem;
   }
 
   .records-panel td:last-child .remarks-controls::-webkit-scrollbar {
@@ -3103,15 +3103,15 @@ body.officer-page #loan-entry-panel {
   }
 
   .records-panel td:last-child .remarks-controls button {
-    min-height: 18px;
-    padding: 0.05rem 0.08rem;
-    font-size: 0.34rem;
-    line-height: 1;
-    letter-spacing: -0.01em;
+    min-height: 26px;
+    padding: 0.18rem 0.14rem;
+    font-size: 0.52rem;
+    line-height: 1.2;
     width: 100%;
     min-width: 0;
     white-space: normal;
     overflow-wrap: anywhere;
+    text-align: center;
   }
 
   .records-panel td:nth-child(5) {
