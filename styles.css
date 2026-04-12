@@ -1791,6 +1791,12 @@ button:active {
   width: 64px;
 }
 
+/* Hide Select column in active dashboard — visible only in settled view */
+body:not(.settled-dashboard-view) .settled-select-header,
+body:not(.settled-dashboard-view) .settled-select-cell {
+  display: none;
+}
+
 .test-date-control input,
 .filter-control input,
 .filter-control select {

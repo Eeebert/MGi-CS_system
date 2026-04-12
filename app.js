@@ -3886,7 +3886,7 @@ function renderRecords() {
 
   if (rows.length === 0) {
     pruneSettledRecordSelection([]);
-    body.innerHTML = `<tr><td colspan="6" class="empty">${isSettledDashboardView ? "No settled accounts yet." : "No records yet."}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="empty">${isSettledDashboardView ? "No settled accounts yet." : "No records yet."}</td></tr>`;
     const hasActiveFilter = hasActiveFilters(activeFilters);
 
     if (viewRecords.length > 0 && hasActiveFilter) {
@@ -3927,6 +3927,7 @@ function renderRecords() {
         const hatagHatagActive = isHatagHatagActive(record);
         const hatagHatagDate = String(record.hatagHatagDate || "").trim();
         const settledActive = isSettledRecord(record);
+        const isChecked = selectedSettledRecordFingerprints.has(buildRecordFingerprint(record));
         const settledDate = String(record.settledDate || "").trim();
         const escapedRemarks = sanitize(record.remarks || "");
         const paymentCount = paymentHistory.length;
@@ -4031,6 +4032,9 @@ function renderRecords() {
             }</button>`}
             ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}">Settle</button>`}
           </div>
+        </td>
+        <td class="settled-select-cell">
+          ${settledActive ? `<label class="settled-select-control"><input type="checkbox" class="settled-record-checkbox" data-index="${index}" aria-label="Select settled account" ${isChecked ? "checked" : ""} /></label>` : ""}
         </td>
       </tr>
     `;
