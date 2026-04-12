@@ -1870,8 +1870,17 @@ body:not(.settled-dashboard-view) .settled-select-cell {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1320px;
+  min-width: 0;
   table-layout: fixed;
+}
+#portfolio-release-data-modal table th,
+#portfolio-release-data-modal table td {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 thead tr,
@@ -1996,7 +2005,7 @@ tbody tr.past-due-row:hover {
   cursor: not-allowed;
 }
 
-.records-panel td:last-child .remarks-controls {
+.records-panel td:nth-child(6) .remarks-controls {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.2rem;
 }
@@ -2284,9 +2293,10 @@ th,
 td {
   text-align: left;
   border-bottom: 1px solid #d5e3ee;
-  padding: 0.32rem 0.26rem;
+  padding: 0 !important;
   font-size: 0.68rem;
-  vertical-align: top;
+  line-height: 0.95;
+  vertical-align: middle;
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -2300,7 +2310,7 @@ td + td {
 th {
   color: #284860;
   background: linear-gradient(180deg, #f7fbff, #e5eff8);
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.055em;
@@ -2446,6 +2456,18 @@ th {
   max-height: min(82vh, 680px);
   display: flex;
   flex-direction: column;
+}
+
+#portfolio-release-data-modal .payment-history-card {
+  width: min(1280px, 98vw);
+  max-height: 94vh;
+  height: 94vh;
+  padding: 0.62rem;
+}
+
+#portfolio-release-data-modal .payment-history-content {
+  flex: 1;
+  min-height: 0;
 }
 
 .payment-history-head {
@@ -3085,33 +3107,33 @@ body.officer-page #loan-entry-panel {
     grid-row: 6;
   }
 
-  .records-panel td:last-child .remarks-controls {
+  .records-panel td:nth-child(6) .remarks-controls {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.2rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.12rem;
     overflow: visible;
-    padding: 0.04rem 0 0.1rem;
+    padding: 0.02rem 0 0.08rem;
   }
 
-  .records-panel td:last-child .remarks-controls::-webkit-scrollbar {
+  .records-panel td:nth-child(6) .remarks-controls::-webkit-scrollbar {
     display: none;
   }
 
-  .records-panel td:last-child .remarks-controls::-webkit-scrollbar-thumb {
+  .records-panel td:nth-child(6) .remarks-controls::-webkit-scrollbar-thumb {
     background: rgba(74, 101, 123, 0.38);
     border-radius: 999px;
   }
 
-  .records-panel td:last-child .remarks-controls button {
-    min-height: 26px;
-    padding: 0.18rem 0.14rem;
-    font-size: 0.52rem;
-    line-height: 1.2;
+  .records-panel td:nth-child(6) .remarks-controls button {
+    min-height: 18px;
+    padding: 0.05rem 0.08rem;
+    font-size: 0.34rem;
+    line-height: 1;
+    letter-spacing: -0.01em;
     width: 100%;
     min-width: 0;
     white-space: normal;
     overflow-wrap: anywhere;
-    text-align: center;
   }
 
   .records-panel td:nth-child(5) {
@@ -3135,6 +3157,14 @@ body.officer-page #loan-entry-panel {
   .records-panel .outstanding-balance-cell .outstanding-balance-value {
     font-size: 0.58rem;
     color: #173a53;
+  }
+
+  body.theme-black .records-panel .outstanding-balance-cell .mobile-field-label {
+    color: #b8c8d7;
+  }
+
+  body.theme-black .records-panel .outstanding-balance-cell .outstanding-balance-value {
+    color: #e8edf2;
   }
 
   .records-panel .outstanding-balance-cell .rebate-display-btn,
@@ -3308,6 +3338,36 @@ body.officer-page #loan-entry-panel {
 @media (max-width: 430px) {
   .container {
     padding-top: 7.6rem;
+  }
+
+  body.portfolio-page-body .portfolio-filter-panel {
+    padding: 0.28rem 0.34rem !important;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head {
+    gap: 0.24rem !important;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head h2 {
+    font-size: 0.7rem !important;
+    margin: 0 !important;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head .filter-control span {
+    font-size: 0.6rem !important;
+    margin-bottom: 0.08rem;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head .filter-control input {
+    min-height: 28px;
+    padding: 0.14rem 0.24rem;
+    font-size: 0.62rem;
+  }
+
+  body.portfolio-page-body .portfolio-filter-head button {
+    min-height: 28px;
+    padding: 0.14rem 0.28rem !important;
+    font-size: 0.62rem !important;
   }
 
   .topbar {

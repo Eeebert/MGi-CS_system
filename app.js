@@ -68,6 +68,8 @@ const logoutConfirmModal = document.getElementById("logout-confirm-modal");
 const logoutConfirmCancelBtn = document.getElementById("logout-confirm-cancel");
 const logoutConfirmYesBtn = document.getElementById("logout-confirm-yes");
 const restoreAuthModal = document.getElementById("restore-auth-modal");
+const restoreAuthTitle = document.getElementById("restore-auth-title");
+const restoreAuthText = restoreAuthModal?.querySelector(".restore-auth-text") || null;
 const restoreAuthPasswordInput = document.getElementById("restore-auth-password");
 const restoreAuthError = document.getElementById("restore-auth-error");
 const restoreAuthConfirmBtn = document.getElementById("restore-auth-confirm");
@@ -634,6 +636,7 @@ const DEFAULT_OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Mari
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
+const DEVICE_LOCAL_KEYS = new Set([THEME_KEY]);
 const AUTH_SETTINGS_KEY = "mgi_auth_settings";
 const DEFAULT_AUTH_SETTINGS = {
   mainUsername: "username",
@@ -1058,10 +1061,25 @@ function closeRestoreAuthModal(result) {
   }
 }
 
-function requestRestoreAdminPassword() {
+function requestRestoreAdminPassword(options = {}) {
+  const title = String(options?.title || "Secure Restore Access");
+  const message = String(options?.message || "Enter admin password to restore backup data.");
+  const confirmLabel = String(options?.confirmLabel || "Continue Restore");
+  const fallbackPrompt = String(options?.fallbackPrompt || "Enter admin password to restore backup:");
+
   if (!restoreAuthModal || !restoreAuthPasswordInput) {
-    const fallback = window.prompt("Enter admin password to restore backup:", "");
+    const fallback = window.prompt(fallbackPrompt, "");
     return Promise.resolve(fallback);
+  }
+
+  if (restoreAuthTitle) {
+    restoreAuthTitle.textContent = title;
+  }
+  if (restoreAuthText) {
+    restoreAuthText.textContent = message;
+  }
+  if (restoreAuthConfirmBtn) {
+    restoreAuthConfirmBtn.textContent = confirmLabel;
   }
 
   if (restoreAuthError) {
@@ -1552,6 +1570,9 @@ function collectComprehensiveLocalBackup() {
       if (!key.startsWith("mgi_")) {
         continue;
       }
+      if (DEVICE_LOCAL_KEYS.has(key)) {
+        continue;
+      }
 
       const rawValue = localStorage.getItem(key);
       if (rawValue === null) {
@@ -1581,6 +1602,9 @@ function restoreComprehensiveLocalBackup(data) {
     if (!key.startsWith("mgi_")) {
       return;
     }
+    if (DEVICE_LOCAL_KEYS.has(key)) {
+      return;
+    }
 
     try {
       localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
@@ -1591,9 +1615,6 @@ function restoreComprehensiveLocalBackup(data) {
   });
 
   renderAddressSuggestions();
-  if (Object.prototype.hasOwnProperty.call(data, THEME_KEY)) {
-    applyTheme(String(data[THEME_KEY] || "black"));
-  }
 
   return restoredCount;
 }
@@ -5210,7 +5231,25 @@ initPurposeLoanSelects();
 renderAddressSuggestions();
 backupDataBtn?.addEventListener("click", () => {
   closeDrawer();
-  downloadFullBackup();
+  const adminPassword = String(getAuthSettings().adminPassword || DEFAULT_AUTH_SETTINGS.adminPassword || "").trim();
+  requestRestoreAdminPassword({
+    title: "Secure Backup Download",
+    message: "Enter admin password to download full backup data.",
+    confirmLabel: "Download Backup",
+    fallbackPrompt: "Enter admin password to download full backup:",
+  }).then((enteredPassword) => {
+    if (enteredPassword === null) {
+      return;
+    }
+
+    if (String(enteredPassword).trim() !== adminPassword) {
+      showMessage("Invalid admin password. Backup download cancelled.", "error");
+      showToast("Backup download blocked", "error");
+      return;
+    }
+
+    downloadFullBackup();
+  });
 });
 
 restoreBackupBtn?.addEventListener("click", async () => {

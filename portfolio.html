@@ -97,6 +97,7 @@
           <div id="released-interest-breakdown" style="margin-top: 6px; font-size: 0.66rem; line-height: 1.3; max-height: 85px; overflow: auto;">
             <p class="empty" style="margin: 0;">No released loans yet.</p>
           </div>
+          <button id="show-released-data" class="btn-secondary" type="button" style="margin-top: 6px; width: 100%;">Show Data</button>
         </article>
       </section>
 
@@ -205,6 +206,30 @@
         <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
       </div>
     </aside>
+
+    <div id="portfolio-logout-confirm-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="portfolio-logout-confirm-title">
+        <h3 id="portfolio-logout-confirm-title">Confirm Logout</h3>
+        <p class="logout-confirm-text">Log out now?</p>
+        <div class="dialog-actions">
+          <button type="button" id="portfolio-logout-confirm-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="portfolio-logout-confirm-yes" class="btn-danger">Log Out</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="portfolio-release-data-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card payment-history-card" role="dialog" aria-modal="true" aria-labelledby="portfolio-release-data-title">
+        <div class="payment-history-head">
+          <div>
+            <h3 id="portfolio-release-data-title">Released Loan Data</h3>
+            <p>Detailed list of Date, Released, Rate, and Interest.</p>
+          </div>
+          <button type="button" id="portfolio-release-data-close" class="btn-secondary">Close</button>
+        </div>
+        <div id="portfolio-release-data-content" class="payment-history-content"></div>
+      </div>
+    </div>
 
     <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>

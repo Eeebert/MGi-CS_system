@@ -1,4 +1,5 @@
 const THEME_KEY = "mgi_dashboard_theme";
+const DEVICE_LOCAL_KEYS = new Set([THEME_KEY]);
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const LOAN_TYPE_MONTHLY_FIXED_60 = "monthly_60_fixed";
 const LOAN_TYPE_EMERGENCY_FIXED = "emergency_fixed";
@@ -2728,6 +2729,9 @@ backupDataBtn?.addEventListener("click", () => {
     if (!key.startsWith("mgi_")) {
       continue;
     }
+    if (DEVICE_LOCAL_KEYS.has(key)) {
+      continue;
+    }
 
     const rawValue = localStorage.getItem(key);
     if (rawValue === null) {
@@ -2772,6 +2776,9 @@ restoreBackupInput?.addEventListener("change", (e) => {
 
       Object.entries(backupData.data).forEach(([key, value]) => {
         if (!key.startsWith("mgi_")) {
+          return;
+        }
+        if (DEVICE_LOCAL_KEYS.has(key)) {
           return;
         }
 

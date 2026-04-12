@@ -11,6 +11,10 @@ const portfolioCount = document.getElementById("portfolio-count");
 const portfolioPastDueCount = document.getElementById("portfolio-past-due-count");
 const portfolioAverage = document.getElementById("portfolio-average");
 const releasedInterestBreakdown = document.getElementById("released-interest-breakdown");
+const showReleasedDataBtn = document.getElementById("show-released-data");
+const portfolioReleaseDataModal = document.getElementById("portfolio-release-data-modal");
+const portfolioReleaseDataCloseBtn = document.getElementById("portfolio-release-data-close");
+const portfolioReleaseDataContent = document.getElementById("portfolio-release-data-content");
 const portfolioDateFilterInput = document.getElementById("portfolio-date-filter");
 const portfolioMonthFilterInput = document.getElementById("portfolio-month-filter");
 const portfolioDateClearBtn = document.getElementById("portfolio-date-clear");
@@ -762,12 +766,16 @@ function getPortfolioFilteredRecords(records) {
 }
 
 function renderReleasedInterestBreakdown(records) {
-  if (!releasedInterestBreakdown) {
+  if (!releasedInterestBreakdown || !portfolioReleaseDataContent) {
     return;
   }
 
   if (!records.length) {
     releasedInterestBreakdown.innerHTML = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
+    portfolioReleaseDataContent.innerHTML = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
+    if (showReleasedDataBtn) {
+      showReleasedDataBtn.disabled = true;
+    }
     return;
   }
 
@@ -796,7 +804,7 @@ function renderReleasedInterestBreakdown(records) {
     })
     .join("");
 
-  releasedInterestBreakdown.innerHTML = `
+  const breakdownTableHtml = `
     <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem;">
       <thead>
         <tr>
@@ -817,6 +825,14 @@ function renderReleasedInterestBreakdown(records) {
       </tfoot>
     </table>
   `;
+
+  releasedInterestBreakdown.innerHTML = `
+    <p style="margin: 0; font-size: 0.66rem;">Total Interest: <strong>${formatCurrency(totalInterest)}</strong></p>
+  `;
+  portfolioReleaseDataContent.innerHTML = breakdownTableHtml;
+  if (showReleasedDataBtn) {
+    showReleasedDataBtn.disabled = false;
+  }
 }
 
 function renderPortfolio() {
@@ -893,6 +909,9 @@ const sideDrawer = document.getElementById("side-drawer");
 const drawerOverlay = document.getElementById("drawer-overlay");
 const drawerCloseBtn = document.getElementById("drawer-close");
 const drawerLogoutBtn = document.getElementById("drawer-logout");
+const portfolioLogoutConfirmModal = document.getElementById("portfolio-logout-confirm-modal");
+const portfolioLogoutConfirmCancelBtn = document.getElementById("portfolio-logout-confirm-cancel");
+const portfolioLogoutConfirmYesBtn = document.getElementById("portfolio-logout-confirm-yes");
 const themeOptions = document.querySelectorAll('input[name="theme-choice"]');
 
 function applyTheme(theme) {
@@ -924,17 +943,56 @@ function closeDrawer() {
   portfolioHamburgerBtn?.classList.remove("is-open");
 }
 
-portfolioHamburgerBtn?.addEventListener("click", openDrawer);
-drawerCloseBtn?.addEventListener("click", closeDrawer);
-drawerOverlay?.addEventListener("click", closeDrawer);
+function openReleaseDataModal() {
+  portfolioReleaseDataModal?.classList.add("show");
+  portfolioReleaseDataModal?.setAttribute("aria-hidden", "false");
+}
 
-drawerLogoutBtn?.addEventListener("click", () => {
-  closeDrawer();
-  const confirmed = window.confirm("Log out now?");
-  if (!confirmed) return;
+function closeReleaseDataModal() {
+  portfolioReleaseDataModal?.classList.remove("show");
+  portfolioReleaseDataModal?.setAttribute("aria-hidden", "true");
+}
+
+function openLogoutConfirm() {
+  portfolioLogoutConfirmModal?.classList.add("show");
+  portfolioLogoutConfirmModal?.setAttribute("aria-hidden", "false");
+}
+
+function closeLogoutConfirm() {
+  portfolioLogoutConfirmModal?.classList.remove("show");
+  portfolioLogoutConfirmModal?.setAttribute("aria-hidden", "true");
+}
+
+function handleLogout() {
+  closeLogoutConfirm();
   sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
   sessionStorage.clear();
   window.location.href = "index.html";
+}
+
+portfolioHamburgerBtn?.addEventListener("click", openDrawer);
+drawerCloseBtn?.addEventListener("click", closeDrawer);
+drawerOverlay?.addEventListener("click", closeDrawer);
+showReleasedDataBtn?.addEventListener("click", openReleaseDataModal);
+portfolioReleaseDataCloseBtn?.addEventListener("click", closeReleaseDataModal);
+portfolioReleaseDataModal?.addEventListener("click", (event) => {
+  if (event.target === portfolioReleaseDataModal) {
+    closeReleaseDataModal();
+  }
+});
+
+drawerLogoutBtn?.addEventListener("click", () => {
+  closeDrawer();
+  openLogoutConfirm();
+});
+
+portfolioLogoutConfirmCancelBtn?.addEventListener("click", closeLogoutConfirm);
+portfolioLogoutConfirmYesBtn?.addEventListener("click", handleLogout);
+
+portfolioLogoutConfirmModal?.addEventListener("click", (event) => {
+  if (event.target === portfolioLogoutConfirmModal) {
+    closeLogoutConfirm();
+  }
 });
 
 themeOptions.forEach((option) => {
