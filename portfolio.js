@@ -616,6 +616,9 @@ function getTypeKey(payableWithin) {
 }
 
 function renderTypeBreakdown(records) {
+  const sourceRecords = Array.isArray(records) ? records : [];
+  const openRecords = sourceRecords.filter((record) => record?.isSettled !== true && computeOutstandingBalance(record) > 0);
+
   const counts = {
     monthlyOpen: 0,
     biMonthly: 0,
@@ -636,26 +639,29 @@ function renderTypeBreakdown(records) {
     notListed: 0,
   };
 
-  records.forEach((record) => {
+  openRecords.forEach((record) => {
     const key = getTypeKey(record.payableWithin);
     counts[key] += 1;
     balances[key] += computeOutstandingBalance(record);
   });
+
   let accountOfficerCount = 0;
   let accountOfficerBalance = 0;
   let settledCount = 0;
   let settledBalance = 0;
 
-  records.forEach((record) => {
-    if (record.accountOfficer && String(record.accountOfficer).trim()) {
+  sourceRecords.forEach((record) => {
+    const outstanding = computeOutstandingBalance(record);
+    const isSettled = record?.isSettled === true || outstanding <= 0;
+
+    if (!isSettled && record.accountOfficer && String(record.accountOfficer).trim()) {
       accountOfficerCount += 1;
-      accountOfficerBalance += computeOutstandingBalance(record);
+      accountOfficerBalance += outstanding;
     }
 
-    const outstanding = computeOutstandingBalance(record);
-    if (outstanding === 0) {
+    if (isSettled) {
       settledCount += 1;
-      settledBalance += 0;
+      settledBalance += outstanding;
     }
   });
 
@@ -817,7 +823,6 @@ function renderPortfolio() {
   const allRecords = getRecords();
   const records = getPortfolioFilteredRecords(allRecords);
   const activeRecords = records.filter((record) => record?.isSettled !== true);
-  const activeAllRecords = allRecords.filter((record) => record?.isSettled !== true);
   const totalReleased = activeRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   const totalEarnedInterest = activeRecords.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
   const totalOutstanding = activeRecords.reduce((sum, record) => sum + computeOutstandingBalance(record), 0);
@@ -848,11 +853,11 @@ function renderPortfolio() {
 
   renderReleasedInterestBreakdown(activeRecords);
 
-  renderTypeBreakdown(activeRecords);
+  renderTypeBreakdown(allRecords);
 
-  renderDailyCollections(activeAllRecords);
+  renderDailyCollections(allRecords);
 
-  renderOfficerCounts(activeAllRecords);
+  renderOfficerCounts(records);
 }
 
 portfolioDateFilterInput?.addEventListener("change", () => {

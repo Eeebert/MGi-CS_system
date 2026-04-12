@@ -592,6 +592,68 @@ function getOfficerStorageKey() {
   return `mgi_officer_records_${toOfficerSlug(normalizedOfficer)}`;
 }
 
+function buildRecordFingerprint(record) {
+  return [
+    String(record?.name || "").trim().toUpperCase(),
+    String(record?.dateGranted || "").trim(),
+    String(Number(record?.amount || 0)),
+    String(record?.payableWithin || "").trim(),
+    String(record?.address || "").trim().toUpperCase(),
+    String(record?.contactNumber || "").trim(),
+  ].join("|");
+}
+
+function dedupeRecords(records) {
+  const seen = new Set();
+  const merged = [];
+
+  for (const record of Array.isArray(records) ? records : []) {
+    const fingerprint = buildRecordFingerprint(record);
+    if (seen.has(fingerprint)) {
+      continue;
+    }
+    seen.add(fingerprint);
+    merged.push(record);
+  }
+
+  return merged;
+}
+
+async function loadOfficerServerRecords(stateKeys) {
+  const keys = Array.isArray(stateKeys) ? stateKeys : [];
+
+  return Promise.all(
+    keys.map(async (stateKey) => {
+      try {
+        const res = await fetchStateApi(stateKey, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, max-age=0",
+            Pragma: "no-cache",
+          },
+        }, true);
+
+        if (!res.ok) {
+          return { key: stateKey, ok: false, status: res.status, records: [] };
+        }
+
+        const data = await res.json().catch(() => null);
+        if (Array.isArray(data?.payload)) {
+          return { key: stateKey, ok: true, status: res.status, records: data.payload };
+        }
+
+        if (data?.payload === null) {
+          return { key: stateKey, ok: true, status: res.status, records: [] };
+        }
+
+        return { key: stateKey, ok: false, status: res.status, records: [] };
+      } catch {
+        return { key: stateKey, ok: false, status: null, records: [] };
+      }
+    })
+  );
+}
+
 function getRecords() {
   return Array.isArray(recordsCache) ? recordsCache : [];
 }
@@ -687,109 +749,83 @@ async function loadRecordsFromServer() {
   if (!isServerWritePending && hasUnsyncedLocalChanges) {
     syncRecordsToServer(getRecords());
   }
+
+  const storageKeys = getOfficerStorageKeyCandidates();
   setSyncStatus("syncing", "syncing...");
   console.info("[sync][officer] Fetch start", {
     officer: currentOfficer,
-    storageKey: getOfficerStorageKey(),
+    storageKeys,
     online: navigator.onLine,
     time: new Date().toISOString(),
   });
 
   try {
-    const res = await fetchStateApi(getOfficerStorageKey(), {
-      cache: "no-store",
-      headers: {
-        "Cache-Control": "no-cache, no-store, max-age=0",
-        Pragma: "no-cache",
-      },
-    }, true);
-    if (!res.ok) {
-      console.error("[sync][officer] Fetch failed", { status: res.status, statusText: res.statusText });
+    const results = await loadOfficerServerRecords(storageKeys);
+    const successfulResults = results.filter((result) => result.ok);
+
+    if (successfulResults.length === 0) {
+      const firstFailed = results.find((result) => result.status !== null);
+      const statusCode = firstFailed?.status || 500;
+      console.error("[sync][officer] Fetch failed", { status: statusCode });
       const localRecords = readOfficerRecordsFromLocalStorage();
       if (localRecords.length > 0) {
         recordsCache = localRecords;
       }
-      setSyncStatus("error", `server error (${res.status})`);
+      setSyncStatus("error", `server error (${statusCode})`);
       return;
     }
 
-    const data = await res.json();
-    if (Array.isArray(data.payload)) {
-      const shouldProtectUnsyncedData = (
-        hasUnsyncedLocalChanges &&
-        data.payload.length === 0 &&
-        recordsCache.length > 0
-      );
-      if (shouldProtectUnsyncedData) {
-        console.info("[sync][officer] Keeping unsynced local records while server save is failing", {
-          officer: currentOfficer,
-          cacheRecords: recordsCache.length,
-        });
-        setSyncStatus("error", "save pending retry");
-        schedulePendingSaveRetry();
-        return;
-      }
-      const shouldGuardEmptyOverwrite = (
-        data.payload.length === 0 &&
-        recordsCache.length > 0 &&
-        Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
-      );
-      if (shouldGuardEmptyOverwrite) {
-        console.info("[sync][officer] Ignoring empty server payload shortly after local change", {
-          officer: currentOfficer,
-          cacheRecords: recordsCache.length,
-        });
-        setSyncStatus("syncing", "waiting server update");
-        return;
-      }
-      if (isServerWritePending) {
-        console.info("[sync][officer] Skipping server apply while save is pending", {
-          officer: currentOfficer,
-        });
-        setSyncStatus("syncing", "save in progress");
-        return;
-      }
-      recordsCache = data.payload;
-      mirrorOfficerRecordsToLocalStorage(recordsCache);
-      console.info("[sync][officer] Fetch success", { officer: currentOfficer, records: data.payload.length });
-      setSyncStatus("ok", `updated (${data.payload.length} records)`);
+    const normalizedOfficer = normalizeOfficerName(currentOfficer);
+    const mergedPayload = dedupeRecords(successfulResults.flatMap((result) => result.records)).map((record) => ({
+      ...record,
+      accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || normalizedOfficer,
+    }));
+
+    const shouldProtectUnsyncedData = (
+      hasUnsyncedLocalChanges &&
+      mergedPayload.length === 0 &&
+      recordsCache.length > 0
+    );
+    if (shouldProtectUnsyncedData) {
+      console.info("[sync][officer] Keeping unsynced local records while server save is failing", {
+        officer: currentOfficer,
+        cacheRecords: recordsCache.length,
+      });
+      setSyncStatus("error", "save pending retry");
+      schedulePendingSaveRetry();
       return;
     }
 
-    if (data.payload === null) {
-      const shouldProtectUnsyncedData = hasUnsyncedLocalChanges && recordsCache.length > 0;
-      if (shouldProtectUnsyncedData) {
-        console.info("[sync][officer] Keeping unsynced local records while server has null payload", {
-          officer: currentOfficer,
-          cacheRecords: recordsCache.length,
-        });
-        setSyncStatus("error", "save pending retry");
-        schedulePendingSaveRetry();
-        return;
-      }
-
-      const shouldGuardNullOverwrite = (
-        recordsCache.length > 0 &&
-        Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
-      );
-      if (shouldGuardNullOverwrite) {
-        console.info("[sync][officer] Ignoring null server payload shortly after local change", {
-          officer: currentOfficer,
-          cacheRecords: recordsCache.length,
-        });
-        setSyncStatus("syncing", "waiting server update");
-        return;
-      }
-
-      recordsCache = [];
-      mirrorOfficerRecordsToLocalStorage(recordsCache);
-      console.info("[sync][officer] Server has no payload yet", { officer: currentOfficer });
-      setSyncStatus("ok", "updated (0 records)");
+    const shouldGuardEmptyOverwrite = (
+      mergedPayload.length === 0 &&
+      recordsCache.length > 0 &&
+      Date.now() - lastLocalMutationAt < EMPTY_OVERWRITE_GUARD_MS
+    );
+    if (shouldGuardEmptyOverwrite) {
+      console.info("[sync][officer] Ignoring empty server payload shortly after local change", {
+        officer: currentOfficer,
+        cacheRecords: recordsCache.length,
+      });
+      setSyncStatus("syncing", "waiting server update");
       return;
     }
 
-    console.warn("[sync][officer] Unexpected payload shape", { payloadType: typeof data.payload });
-    setSyncStatus("error", "invalid server payload");
+    if (isServerWritePending) {
+      console.info("[sync][officer] Skipping server apply while save is pending", {
+        officer: currentOfficer,
+      });
+      setSyncStatus("syncing", "save in progress");
+      return;
+    }
+
+    recordsCache = mergedPayload;
+    mirrorOfficerRecordsToLocalStorage(recordsCache);
+    console.info("[sync][officer] Fetch success", {
+      officer: currentOfficer,
+      records: mergedPayload.length,
+      sourceKeys: successfulResults.map((result) => result.key),
+    });
+    setSyncStatus("ok", `updated (${mergedPayload.length} records)`);
   } catch {
     console.error("[sync][officer] Network error while fetching state", { officer: currentOfficer });
     const localRecords = readOfficerRecordsFromLocalStorage();
