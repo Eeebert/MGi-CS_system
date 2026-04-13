@@ -2877,6 +2877,7 @@ async function exportVisibleRecords() {
       <th>Address</th>
       <th>Contact Number</th>
       <th>Amount Collectible</th>
+      <th>Amount Paid</th>
       <th>Arrears</th>
       <th>Other Arrears</th>
       <th>Co-maker</th>
@@ -2895,6 +2896,7 @@ async function exportVisibleRecords() {
           <td>${sanitize(String(record.address || ""))}</td>
           <td>${sanitize(String(record.contactNumber || ""))}</td>
           <td>${formatCurrency(collectibleAmount)}</td>
+          <td>&nbsp;</td>
           <td>${formatPlainAmount(arrearsAmount)}</td>
           <td>${formatPlainAmount(otherArrearsAmount)}</td>
           <td>${sanitize(String(record.coMaker || ""))}</td>
@@ -5496,8 +5498,8 @@ const drawerLogoutBtn = document.getElementById("drawer-logout");
 const themeOptions = document.querySelectorAll('input[name="theme-choice"]');
 
 function applyTheme(theme) {
-  const selectedTheme = ["white", "black"].includes(theme) ? theme : "white";
-  document.body.classList.remove("theme-white", "theme-black");
+  const selectedTheme = ["white", "black", "pink", "redwhite"].includes(theme) ? theme : "white";
+  document.body.classList.remove("theme-white", "theme-black", "theme-pink", "theme-redwhite");
   document.body.classList.add(`theme-${selectedTheme}`);
   localStorage.setItem(THEME_KEY, selectedTheme);
   themeOptions.forEach((option) => {

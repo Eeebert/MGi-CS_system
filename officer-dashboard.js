@@ -1620,13 +1620,12 @@ async function exportVisibleRecordsToWord() {
   const headerRow = `
     <tr>
       <th>Borrower</th>
-      <th>Loan Info</th>
-      <th>Amount</th>
+      <th>Loan Amount</th>
       <th>Date Granted</th>
       <th>Due Date</th>
-      <th>Interest Rate</th>
       <th>Outstanding Balance</th>
-      <th>Total Paid</th>
+      <th>Amount Collectible</th>
+      <th>Amount Collected</th>
       <th>Remarks</th>
     </tr>
   `;
@@ -1635,8 +1634,7 @@ async function exportVisibleRecordsToWord() {
     .map(({ record }) => {
       const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
       const outstandingBalance = computeRemainingPayable(record);
-      const totalPaidAmount = getTotalPaidAmount(record);
-      const effectiveInterestRate = getEffectiveInterestRate(record);
+      const collectibleAmount = computeCollectibleAmount(record);
       return `
         <tr>
           <td>
@@ -1644,17 +1642,12 @@ async function exportVisibleRecordsToWord() {
             <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
             <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
           </td>
-          <td>
-            <div class="loan-info-purpose"><b>Purpose of Loan:</b> ${sanitize(String(record.purposeOfLoan || "-"))}</div>
-            <div class="loan-info-mode"><b>Mode of Payment:</b> ${sanitize(String(record.modeOfPayment || "-"))}</div>
-            <div class="loan-info-type"><b>Type of Loan:</b> ${sanitize(getTypeLabel(record.payableWithin))}</div>
-          </td>
           <td>${formatCurrency(record.amount)}</td>
           <td>${sanitize(formatLongDate(record.dateGranted))}</td>
           <td>${sanitize(formatLongDate(dueDate))}</td>
-          <td>${sanitize(formatPlainAmount(effectiveInterestRate))}%</td>
           <td>${formatCurrency(outstandingBalance)}</td>
-          <td>${formatCurrency(totalPaidAmount)}</td>
+          <td>${formatCurrency(collectibleAmount)}</td>
+          <td>&nbsp;</td>
           <td>${sanitize(String(record.remarks || ""))}</td>
         </tr>
       `;
@@ -2799,8 +2792,8 @@ restoreBackupInput?.addEventListener("change", (e) => {
 });
 
 function applyTheme(theme) {
-  const selectedTheme = ["white", "black"].includes(theme) ? theme : "white";
-  document.body.classList.remove("theme-white", "theme-black");
+  const selectedTheme = ["white", "black", "pink", "redwhite"].includes(theme) ? theme : "white";
+  document.body.classList.remove("theme-white", "theme-black", "theme-pink", "theme-redwhite");
   document.body.classList.add(`theme-${selectedTheme}`);
   localStorage.setItem(THEME_KEY, selectedTheme);
   themeOptions.forEach((option) => {
