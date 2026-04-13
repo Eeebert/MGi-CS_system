@@ -552,6 +552,16 @@ function normalizeOfficerName(rawOfficer) {
   return matched || OFFICER_NAMES[0];
 }
 
+function findOfficerName(rawOfficer) {
+  const value = String(rawOfficer || "").trim();
+  if (!value) {
+    return "";
+  }
+
+  const matched = OFFICER_NAMES.find((name) => name.toLowerCase() === value.toLowerCase());
+  return matched || "";
+}
+
 function toOfficerSlug(name) {
   return String(name || "")
     .toLowerCase()
@@ -563,8 +573,7 @@ function getOfficerStorageKeyCandidates() {
   const normalizedOfficer = normalizeOfficerName(currentOfficer);
   const canonicalKey = `mgi_officer_records_${toOfficerSlug(normalizedOfficer)}`;
   const legacyRawKey = `mgi_officer_records_${currentOfficer}`;
-  const fallbackUnknownKey = "mgi_officer_records_Unknown";
-  return Array.from(new Set([canonicalKey, legacyRawKey, fallbackUnknownKey]));
+  return Array.from(new Set([canonicalKey, legacyRawKey]));
 }
 
 function setSyncStatus(state, detail) {
@@ -777,10 +786,15 @@ async function loadRecordsFromServer() {
     }
 
     const normalizedOfficer = normalizeOfficerName(currentOfficer);
-    const mergedPayload = dedupeRecords(successfulResults.flatMap((result) => result.records)).map((record) => ({
-      ...record,
-      accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || normalizedOfficer,
-    }));
+    const mergedPayload = dedupeRecords(successfulResults.flatMap((result) => result.records))
+      .filter((record) => {
+        const taggedOfficer = findOfficerName(record?.accountOfficer);
+        return taggedOfficer === "" || taggedOfficer === normalizedOfficer;
+      })
+      .map((record) => ({
+        ...record,
+        accountOfficer: normalizedOfficer,
+      }));
 
     const shouldProtectUnsyncedData = (
       hasUnsyncedLocalChanges &&
@@ -1968,6 +1982,7 @@ form?.addEventListener("submit", (e) => {
     name: toUpperInputValue(nameInput.value).trim(),
     address: toUpperInputValue(addressInput.value).trim(),
     contactNumber: toUpperInputValue(contactNumberInput.value).trim(),
+    accountOfficer: normalizeOfficerName(currentOfficer),
     purposeOfLoan: String(purposeOfLoanInput.value || "").trim(),
     modeOfPayment: String(modeOfPaymentSelect.value || "").trim(),
     payableWithin: String(payableWithinSelect.value || "").trim(),
