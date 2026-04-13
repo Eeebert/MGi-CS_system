@@ -92,6 +92,15 @@ function normalizeOfficerName(rawOfficer) {
   return slugMatch || value;
 }
 
+function findOfficerName(rawOfficer) {
+  const normalized = normalizeOfficerName(rawOfficer);
+  if (!normalized) {
+    return "";
+  }
+
+  return OFFICER_NAMES.includes(normalized) ? normalized : "";
+}
+
 function getOfficerStorageKeys(officerName) {
   const normalized = normalizeOfficerName(officerName) || String(officerName || "").trim();
   const canonical = `mgi_officer_records_${toOfficerSlug(normalized)}`;
@@ -111,7 +120,7 @@ function getKnownOfficerNames() {
       if (!key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) {
         continue;
       }
-      const officerName = normalizeOfficerName(key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim());
+      const officerName = findOfficerName(key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim());
       if (officerName) {
         names.add(officerName);
       }
@@ -163,9 +172,13 @@ function getLocalOfficerRecords() {
   const merged = getKnownOfficerNames().flatMap((officerName) => {
     const allRecords = getOfficerStorageKeys(officerName)
       .flatMap((stateKey) => readCachedStateRecords(stateKey))
+      .filter((record) => {
+        const taggedOfficer = findOfficerName(record?.accountOfficer);
+        return taggedOfficer === "" || taggedOfficer === officerName;
+      })
       .map((record) => ({
         ...record,
-        accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
+        accountOfficer: findOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
       }));
     return dedupeRecords(allRecords);
   });
@@ -256,10 +269,13 @@ async function loadRecordsFromServer() {
     const [officerPayloads, globalRecords] = await Promise.all([
       Promise.all(
         officerNames.map((officerName) => Promise.all(getOfficerStorageKeys(officerName).map((stateKey) => loadStateRecords(stateKey))).then((payloads) => {
-          const mergedOfficerPayload = dedupeRecords(payloads.flat());
+          const mergedOfficerPayload = dedupeRecords(payloads.flat()).filter((record) => {
+            const taggedOfficer = findOfficerName(record?.accountOfficer);
+            return taggedOfficer === "" || taggedOfficer === officerName;
+          });
           return mergedOfficerPayload.map((record) => ({
             ...record,
-            accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
+            accountOfficer: findOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
           }));
         }))
       ),
@@ -691,11 +707,11 @@ function renderTypeBreakdown(records) {
 }
 
 function getOfficerNameFromRecord(record) {
-  const directName = normalizeOfficerName(String(record?.accountOfficer || "").trim());
+  const directName = findOfficerName(String(record?.accountOfficer || "").trim());
   if (directName) {
     return directName;
   }
-  const fallbackName = normalizeOfficerName(String(record?.officerName || record?.officer || "").trim());
+  const fallbackName = findOfficerName(String(record?.officerName || record?.officer || "").trim());
   return fallbackName;
 }
 
