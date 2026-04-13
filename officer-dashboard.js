@@ -538,6 +538,10 @@ function getWriteOffPassword() {
   return String(getAuthSettings().mainPassword || DEFAULT_AUTH_SETTINGS.mainPassword);
 }
 
+function getAdminPassword() {
+  return String(getAuthSettings().adminPassword || DEFAULT_AUTH_SETTINGS.adminPassword);
+}
+
 function ensureSyncStatusElement() {
   return null;
 }
@@ -2723,6 +2727,17 @@ async function refreshBackupHealthStatus() {
 }
 
 backupDataBtn?.addEventListener("click", () => {
+  const enteredPassword = window.prompt("Enter admin password to download full backup:", "");
+  if (enteredPassword === null) {
+    return;
+  }
+
+  if (String(enteredPassword).trim() !== getAdminPassword().trim()) {
+    showMessage("Invalid admin password. Backup download cancelled.", "error");
+    showToast("Backup download blocked", "error");
+    return;
+  }
+
   const allData = {
     meta: {
       source: "mgi-cs-system-officer",
