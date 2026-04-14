@@ -691,28 +691,83 @@ body.theme-black .officer-link:hover {
 .restore-auth-card {
   width: min(430px, 96vw);
   border: 1px solid rgba(87, 173, 236, 0.45);
-  background: linear-gradient(165deg, #ffffff, #edf7ff);
+  background:
+    radial-gradient(circle at top right, rgba(104, 185, 255, 0.24), transparent 38%),
+    linear-gradient(165deg, #ffffff, #edf7ff 58%, #e5f3ff);
   box-shadow: 0 24px 42px rgba(20, 56, 82, 0.26);
+  overflow: hidden;
+}
+
+.restore-auth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  background: rgba(27, 126, 196, 0.12);
+  color: #1e5f88;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.restore-auth-badge::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #36a3ea, #1172b8);
+  box-shadow: 0 0 0 0.18rem rgba(54, 163, 234, 0.18);
 }
 
 .restore-auth-text {
   color: #355f7b;
   font-weight: 600;
+  line-height: 1.45;
 }
 
 .restore-auth-card .dialog-field input {
   border-color: #8db4d3;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.restore-auth-card .dialog-field input:focus {
+  border-color: #3197d8;
+  box-shadow: 0 0 0 3px rgba(49, 151, 216, 0.16);
+}
+
+.restore-auth-actions {
+  margin-top: 0.7rem;
+}
+
+.restore-auth-actions .btn-pay,
+.restore-auth-actions .btn-secondary {
+  min-width: 9.5rem;
 }
 
 body.theme-black .restore-auth-card {
   border-color: rgba(73, 133, 177, 0.62);
-  background: linear-gradient(165deg, #111d2c, #0b1724);
+  background:
+    radial-gradient(circle at top right, rgba(57, 128, 179, 0.25), transparent 34%),
+    linear-gradient(165deg, #111d2c, #0b1724);
   box-shadow: 0 26px 46px rgba(2, 10, 20, 0.62);
 }
 
 body.theme-black .restore-auth-text {
   color: #a8c6df;
+}
+
+body.theme-black .restore-auth-badge {
+  background: rgba(62, 128, 176, 0.18);
+  color: #c7e2f4;
+}
+
+body.theme-black .restore-auth-badge::before {
+  background: linear-gradient(180deg, #69c0ff, #1d7fc4);
+  box-shadow: 0 0 0 0.18rem rgba(105, 192, 255, 0.18);
 }
 
 body.theme-black .theme-option input[type="radio"] {

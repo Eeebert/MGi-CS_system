@@ -235,6 +235,23 @@
       </div>
     </div>
 
+    <div id="restore-auth-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card restore-auth-card" role="dialog" aria-modal="true" aria-labelledby="restore-auth-title">
+        <div class="restore-auth-badge">Admin Verification</div>
+        <h3 id="restore-auth-title">Secure Backup Access</h3>
+        <p class="restore-auth-text">Enter admin password to continue with this backup action.</p>
+        <label class="dialog-field">
+          <span>Admin Password</span>
+          <input type="password" id="restore-auth-password" autocomplete="current-password" placeholder="Enter admin password" />
+        </label>
+        <p id="restore-auth-error" class="dialog-error" role="status" aria-live="polite"></p>
+        <div class="dialog-actions restore-auth-actions">
+          <button type="button" id="restore-auth-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="restore-auth-confirm" class="btn-pay">Continue</button>
+        </div>
+      </div>
+    </div>
+
     <div id="payment-history-modal" class="dialog-backdrop" aria-hidden="true">
       <div class="dialog-card payment-history-card" role="dialog" aria-modal="true" aria-labelledby="payment-history-title">
         <div class="payment-history-head">

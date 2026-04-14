@@ -44,6 +44,13 @@ const writeOffPasswordInput = document.getElementById("write-off-password");
 const writeOffError = document.getElementById("write-off-error");
 const writeOffConfirmBtn = document.getElementById("write-off-confirm");
 const writeOffCancelBtn = document.getElementById("write-off-cancel");
+const restoreAuthModal = document.getElementById("restore-auth-modal");
+const restoreAuthTitle = document.getElementById("restore-auth-title");
+const restoreAuthText = restoreAuthModal?.querySelector(".restore-auth-text") || null;
+const restoreAuthPasswordInput = document.getElementById("restore-auth-password");
+const restoreAuthError = document.getElementById("restore-auth-error");
+const restoreAuthConfirmBtn = document.getElementById("restore-auth-confirm");
+const restoreAuthCancelBtn = document.getElementById("restore-auth-cancel");
 const paymentHistoryModal = document.getElementById("payment-history-modal");
 const paymentHistoryTitle = document.getElementById("payment-history-title");
 const paymentHistoryContent = document.getElementById("payment-history-content");
@@ -509,11 +516,14 @@ let recordsCache = [];
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
+const RESTORE_BACKUP_AUTH_WINDOW_MS = 30000;
 let hasUnsyncedLocalChanges = false;
 let pendingRetryTimer = null;
 let paymentEntryRowIndex = -1;
 let writeOffPasswordResolver = null;
+let restoreAuthPasswordResolver = null;
 let openRemarksEditorRowIndex = -1;
+let restoreBackupAuthorizedAt = 0;
 
 function getAuthSettings() {
   try {
@@ -540,6 +550,94 @@ function getWriteOffPassword() {
 
 function getAdminPassword() {
   return String(getAuthSettings().adminPassword || DEFAULT_AUTH_SETTINGS.adminPassword);
+}
+
+function closeRestoreAuthModal(result) {
+  if (!restoreAuthModal) {
+    if (typeof restoreAuthPasswordResolver === "function") {
+      restoreAuthPasswordResolver(result);
+      restoreAuthPasswordResolver = null;
+    }
+    return;
+  }
+
+  restoreAuthModal.classList.remove("show");
+  restoreAuthModal.setAttribute("aria-hidden", "true");
+
+  if (restoreAuthPasswordInput) {
+    restoreAuthPasswordInput.value = "";
+  }
+  if (restoreAuthError) {
+    restoreAuthError.textContent = "";
+  }
+
+  if (typeof restoreAuthPasswordResolver === "function") {
+    restoreAuthPasswordResolver(result);
+    restoreAuthPasswordResolver = null;
+  }
+}
+
+function requestAdminPassword(options = {}) {
+  const title = String(options?.title || "Secure Backup Access");
+  const message = String(options?.message || "Enter admin password to continue with this backup action.");
+  const confirmLabel = String(options?.confirmLabel || "Continue");
+  const fallbackPrompt = String(options?.fallbackPrompt || "Enter admin password:");
+
+  if (!restoreAuthModal || !restoreAuthPasswordInput) {
+    const fallback = window.prompt(fallbackPrompt, "");
+    return Promise.resolve(fallback);
+  }
+
+  if (restoreAuthTitle) {
+    restoreAuthTitle.textContent = title;
+  }
+  if (restoreAuthText) {
+    restoreAuthText.textContent = message;
+  }
+  if (restoreAuthConfirmBtn) {
+    restoreAuthConfirmBtn.textContent = confirmLabel;
+  }
+  if (restoreAuthError) {
+    restoreAuthError.textContent = "";
+  }
+
+  restoreAuthModal.classList.add("show");
+  restoreAuthModal.setAttribute("aria-hidden", "false");
+  restoreAuthPasswordInput.value = "";
+
+  setTimeout(() => {
+    restoreAuthPasswordInput.focus();
+  }, 0);
+
+  return new Promise((resolve) => {
+    restoreAuthPasswordResolver = resolve;
+  });
+}
+
+async function authorizeRestoreBackup() {
+  const enteredPassword = await requestAdminPassword({
+    title: "Secure Restore Access",
+    message: "Enter admin password to restore the full system backup file.",
+    confirmLabel: "Continue Restore",
+    fallbackPrompt: "Enter admin password to restore full backup:",
+  });
+
+  if (enteredPassword === null) {
+    return false;
+  }
+
+  if (String(enteredPassword).trim() !== getAdminPassword().trim()) {
+    showMessage("Invalid admin password. Restore cancelled.", "error");
+    showToast("Restore blocked", "error");
+    return false;
+  }
+
+  restoreBackupAuthorizedAt = Date.now();
+  return true;
+}
+
+function hasRestoreBackupAuthorization() {
+  return Date.now() - restoreBackupAuthorizedAt <= RESTORE_BACKUP_AUTH_WINDOW_MS;
 }
 
 function ensureSyncStatusElement() {
@@ -1644,6 +1742,7 @@ async function exportVisibleRecordsToWord() {
       <th>Outstanding Balance</th>
       <th>Amount Collectible</th>
       <th>Amount Collected</th>
+      <th>Amount Remaining</th>
       <th>Remarks</th>
     </tr>
   `;
@@ -1657,14 +1756,13 @@ async function exportVisibleRecordsToWord() {
         <tr>
           <td>
             <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
-            <div class="borrower-contact"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6.6 3C7 4.5 7.5 5.9 8.2 7.1L6.8 8.5c.7 1.4 1.8 2.5 3.2 3.2l1.4-1.4c1.2.7 2.6 1.2 4.1 1.4v2.8C12.1 15 6 8.9 3 5.6V3h3.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>${sanitize(String(record.contactNumber || "-"))}</div>
-            <div class="borrower-address"><svg class="borrower-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10 2a6 6 0 0 1 6 6c0 4-6 10-6 10S4 12 4 8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>${sanitize(String(record.address || "-"))}</div>
           </td>
           <td>${formatCurrency(record.amount)}</td>
           <td>${sanitize(formatLongDate(record.dateGranted))}</td>
           <td>${sanitize(formatLongDate(dueDate))}</td>
           <td>${formatCurrency(outstandingBalance)}</td>
           <td>${formatCurrency(collectibleAmount)}</td>
+          <td>&nbsp;</td>
           <td>&nbsp;</td>
           <td>${sanitize(String(record.remarks || ""))}</td>
         </tr>
@@ -1677,14 +1775,18 @@ async function exportVisibleRecordsToWord() {
       <head>
         <meta charset="UTF-8" />
         <style>
+          @page {
+            margin: 0.5in;
+          }
           body {
-            font-family: "Aptos Display", "Aptos", "Times New Roman", serif;
+            font-family: Calibri, "Segoe UI", sans-serif;
+            font-size: 11pt;
             color: #1a1a1a;
             margin: 0;
             background: #ffffff;
           }
           .sheet {
-            padding: 18px 20px 14px;
+            padding: 0;
           }
           .doc-header {
             text-align: center;
@@ -1708,13 +1810,13 @@ async function exportVisibleRecordsToWord() {
           }
           .meta {
             margin-top: 2px;
-            font-size: 9pt;
+            font-size: 11pt;
             line-height: 1.2;
             text-transform: uppercase;
           }
           .doc-subtitle {
             margin: 7px 0 0;
-            font-size: 10pt;
+            font-size: 11pt;
             font-weight: 700;
             letter-spacing: 0.4px;
             text-transform: uppercase;
@@ -1727,7 +1829,7 @@ async function exportVisibleRecordsToWord() {
           .records-table th, .records-table td {
             border: 1px solid #9eb6ce;
             padding: 4px 5px;
-            font-size: 7pt;
+            font-size: 11pt;
             vertical-align: top;
             word-wrap: break-word;
           }
@@ -1742,6 +1844,9 @@ async function exportVisibleRecordsToWord() {
           }
           .records-table td {
             line-height: 1.2;
+          }
+          .borrower-name {
+            font-weight: 400;
           }
         </style>
       </head>
@@ -2122,6 +2227,28 @@ writeOffConfirmBtn?.addEventListener("click", () => {
 
 writeOffCancelBtn?.addEventListener("click", () => {
   closeWriteOffModal(null);
+});
+
+restoreAuthConfirmBtn?.addEventListener("click", () => {
+  const password = (restoreAuthPasswordInput?.value || "").trim();
+  if (!password) {
+    if (restoreAuthError) {
+      restoreAuthError.textContent = "Password is required.";
+    }
+    restoreAuthPasswordInput?.focus();
+    return;
+  }
+  closeRestoreAuthModal(password);
+});
+
+restoreAuthCancelBtn?.addEventListener("click", () => {
+  closeRestoreAuthModal(null);
+});
+
+restoreAuthModal?.addEventListener("click", (event) => {
+  if (event.target === restoreAuthModal) {
+    closeRestoreAuthModal(null);
+  }
 });
 
 writeOffModal?.addEventListener("click", (event) => {
@@ -2608,6 +2735,18 @@ body?.addEventListener("click", async (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (restoreAuthModal?.classList.contains("show")) {
+    if (event.key === "Escape") {
+      closeRestoreAuthModal(null);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      restoreAuthConfirmBtn?.click();
+      return;
+    }
+  }
+
   if (paymentEntryModal?.classList.contains("show")) {
     if (event.key === "Escape") {
       closePaymentEntryModal();
@@ -2726,8 +2865,14 @@ async function refreshBackupHealthStatus() {
   }
 }
 
-backupDataBtn?.addEventListener("click", () => {
-  const enteredPassword = window.prompt("Enter admin password to download full backup:", "");
+backupDataBtn?.addEventListener("click", async () => {
+  const enteredPassword = await requestAdminPassword({
+    title: "Secure Backup Access",
+    message: "Enter admin password to download the full system backup file.",
+    confirmLabel: "Download Backup",
+    fallbackPrompt: "Enter admin password to download full backup:",
+  });
+
   if (enteredPassword === null) {
     return;
   }
@@ -2779,11 +2924,25 @@ backupDataBtn?.addEventListener("click", () => {
   setBackupStatusNote("ok", "Backup status: full system backup available");
 });
 
-restoreBackupBtn?.addEventListener("click", () => {
+restoreBackupBtn?.addEventListener("click", async () => {
+  const authorized = await authorizeRestoreBackup();
+  if (!authorized) {
+    restoreBackupAuthorizedAt = 0;
+    return;
+  }
+
   restoreBackupInput?.click();
 });
 
 restoreBackupInput?.addEventListener("change", (e) => {
+  if (!hasRestoreBackupAuthorization()) {
+    showMessage("Admin password required before restoring backup.", "error");
+    showToast("Restore blocked", "error");
+    e.target.value = "";
+    return;
+  }
+
+  restoreBackupAuthorizedAt = 0;
   const file = e.target.files?.[0];
   if (!file) return;
 
