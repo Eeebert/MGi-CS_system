@@ -955,10 +955,13 @@ async function loadRecordsFromServer() {
 }
 
 function formatCurrency(value) {
+  const amount = Number(value || 0);
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-  }).format(value || 0);
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function formatLongDate(isoDate) {
@@ -1432,7 +1435,7 @@ function renderRecords() {
             <div class="loan-info-type"><b>Type of Loan:</b> ${sanitize(getTypeLabel(record.payableWithin))}</div>
           </td>
           <td>
-            <div class="amount-info-rate">Interest rate: <span class="amount-info-rate-value">${effectiveInterestRate.toFixed(2)}%</span></div>
+            <div class="amount-info-rate">Interest rate: <span class="amount-info-rate-value">${Math.round(effectiveInterestRate)}%</span></div>
             <div class="amount-info-line"><b>Grant Amount:</b> ${formatCurrency(record.amount)}</div>
             <div class="amount-info-line"><b>Date Granted:</b> ${formatLongDate(record.dateGranted)}</div>
             <button type="button" class="btn-secondary due-date-display-btn" data-index="${index}">Due Date: ${formatLongDate(dueDate)}</button>
@@ -1525,7 +1528,7 @@ function formatUpperDate(isoDate) {
 
 function formatPlainAmount(value) {
   const amount = Number(value || 0);
-  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+  return Number.isFinite(amount) ? String(Math.round(amount)) : "0";
 }
 
 function formatBackupTimestamp(dateValue) {
@@ -1922,16 +1925,26 @@ async function exportToExcel() {
       "Address",
       "Contact Number",
       "Co-Maker",
-      "Account Officers",
       "Loan Type",
       "Purpose",
       "Amount",
-      "Interest",
+      "Interest Rate",
       "Mode of Payment",
       "Date Granted",
       "Due Date",
+      "Outstanding Balance",
+      "Arrears",
+      "Other Arrears",
       "Payment History",
     ];
+
+    const formatWholeAmount = (value) => {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) {
+        return "0";
+      }
+      return String(Math.round(numericValue));
+    };
 
     const csvRows = visibleRows.map(({ record }) => {
       const normalizedRecord = {
@@ -1940,22 +1953,33 @@ async function exportToExcel() {
       };
       const paymentHistory = getPaymentHistory(record) || [];
       const paymentSummary = paymentHistory.length > 0
-        ? paymentHistory.map(p => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatPlainAmount(p.amount || 0)}`).join("; ")
+        ? paymentHistory.map((p) => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatWholeAmount(p.amount || 0)}`).join("; ")
         : "No payments";
+
+      // Extract numeric values without formatting for proper CSV handling
+      const amount = Number(normalizedRecord.amount || 0);
+      const interest = Number(normalizedRecord.interestRate || 0);
+      const outstanding = Math.max(0, computeRemainingPayable(record));
+      const rawArrears = Number(normalizedRecord.manualArrearsAmount ?? 0);
+      const arrears = Number.isFinite(rawArrears) && rawArrears > 0 ? rawArrears : 0;
+      const rawOtherArrears = Number(normalizedRecord.manualOtherArrearsAmount ?? 0);
+      const otherArrears = Number.isFinite(rawOtherArrears) && rawOtherArrears > 0 ? rawOtherArrears : 0;
 
       return [
         escapeCSV(normalizedRecord.name || ""),
         escapeCSV(normalizedRecord.address || ""),
         escapeCSV(normalizedRecord.contactNumber || ""),
         escapeCSV(normalizedRecord.coMaker || ""),
-        escapeCSV(normalizedRecord.accountOfficer || ""),
         escapeCSV(normalizedRecord.payableWithin || ""),
         escapeCSV(normalizedRecord.purposeOfLoan || ""),
-        formatPlainAmount(normalizedRecord.amount || 0),
-        formatPlainAmount(normalizedRecord.interestRate || 0),
+        formatWholeAmount(amount),
+        formatWholeAmount(interest),
         escapeCSV(normalizedRecord.modeOfPayment || ""),
-        formatUpperDate(toIsoDate(new Date(normalizedRecord.dateGranted || ""))),
-        formatUpperDate(toIsoDate(new Date(normalizedRecord.dueDate || ""))),
+        escapeCSV(formatUpperDate(toIsoDate(new Date(normalizedRecord.dateGranted || "")))),
+        escapeCSV(formatUpperDate(toIsoDate(new Date(normalizedRecord.dueDate || "")))),
+        formatWholeAmount(outstanding),
+        formatWholeAmount(arrears),
+        formatWholeAmount(otherArrears),
         escapeCSV(paymentSummary),
       ];
     });

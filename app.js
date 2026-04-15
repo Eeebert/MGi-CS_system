@@ -1437,10 +1437,13 @@ function updateReleasedSummaryStats() {
 }
 
 function formatCurrency(value) {
+  const amount = Number(value || 0);
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
-  }).format(value);
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function addCommas(value) {
@@ -1514,7 +1517,11 @@ function formatUpperDate(isoDate) {
 }
 
 function formatPlainAmount(value) {
-  return Number(value || 0).toFixed(2);
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) {
+    return "0";
+  }
+  return String(Math.round(amount));
 }
 
 function toFileSafeName(value) {
@@ -3058,36 +3065,55 @@ async function exportToExcel() {
     "Address",
     "Contact Number",
     "Co-Maker",
-    "Account Officers",
     "Loan Type",
     "Purpose",
     "Amount",
-    "Interest",
+    "Interest Rate",
     "Mode of Payment",
     "Date Granted",
     "Due Date",
+    "Outstanding Balance",
+    "Arrears",
+    "Other Arrears",
     "Payment History",
   ];
+
+  const formatWholeAmount = (value) => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return "0";
+    }
+    return String(Math.round(numericValue));
+  };
 
   const csvRows = rows.map(({ record }) => {
     const paymentHistory = getPaymentHistory(record) || [];
     const paymentSummary = paymentHistory.length > 0
-      ? paymentHistory.map(p => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatPlainAmount(p.amount || 0)}`).join("; ")
+      ? paymentHistory.map((p) => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatWholeAmount(p.amount || 0)}`).join("; ")
       : "No payments";
+    
+    // Extract numeric values without formatting for proper CSV handling
+    const amount = Number(record.amount || 0);
+    const interest = Number(record.interestRate || 0);
+    const outstanding = Math.max(0, computeRemainingPayable(record));
+    const arrears = computeArrearsAmount(record);
+    const otherArrears = computeOtherArrearsAmount(record);
     
     return [
       escapeCSV(record.name || ""),
       escapeCSV(record.address || ""),
       escapeCSV(record.contactNumber || ""),
       escapeCSV(record.coMaker || ""),
-      escapeCSV(record.accountOfficer || ""),
       escapeCSV(record.payableWithin || ""),
       escapeCSV(record.purposeOfLoan || ""),
-      formatPlainAmount(record.amount || 0),
-      formatPlainAmount(record.interestRate || 0),
+      formatWholeAmount(amount),
+      formatWholeAmount(interest),
       escapeCSV(record.modeOfPayment || ""),
-      formatUpperDate(toIsoDate(new Date(record.dateGranted || ""))),
-      formatUpperDate(toIsoDate(new Date(record.dueDate || ""))),
+      escapeCSV(formatUpperDate(toIsoDate(new Date(record.dateGranted || "")))),
+      escapeCSV(formatUpperDate(toIsoDate(new Date(record.dueDate || "")))),
+      formatWholeAmount(outstanding),
+      formatWholeAmount(arrears),
+      formatWholeAmount(otherArrears),
       escapeCSV(paymentSummary),
     ];
   });
@@ -3418,7 +3444,7 @@ async function exportStatementOfAccount(record) {
               <td class="details-label">Co-maker</td>
               <td>${sanitize(String(record.coMaker || "-"))}</td>
               <td class="details-label">Interest Rate</td>
-              <td>${record.interestRate.toFixed(2)}%</td>
+              <td>${Math.round(Number(record.interestRate || 0))}%</td>
             </tr>
             <tr>
               <td class="details-label">Co-maker Contact Number</td>
@@ -3430,7 +3456,7 @@ async function exportStatementOfAccount(record) {
     : `
             <tr>
               <td class="details-label">Interest Rate</td>
-              <td>${record.interestRate.toFixed(2)}%</td>
+              <td>${Math.round(Number(record.interestRate || 0))}%</td>
               <td class="details-label">Date Granted</td>
               <td>${sanitize(formatLongDate(record.dateGranted))}</td>
             </tr>
@@ -4051,7 +4077,7 @@ function renderRecords() {
           <div class="loan-info-type"><b>Type of Loan:</b> ${sanitize(getTypeLabel(record.payableWithin))}</div>
         </td>
         <td>
-          <div class="amount-info-rate">Interest rate: <span class="amount-info-rate-value">${getEffectiveInterestRate(record).toFixed(2)}%</span></div>
+          <div class="amount-info-rate">Interest rate: <span class="amount-info-rate-value">${Math.round(getEffectiveInterestRate(record))}%</span></div>
           <div class="amount-info-line"><b>Grant Amount:</b> <span class="grant-amount-value">${formatCurrency(record.amount)}</span></div>
           <div class="amount-info-line"><b>Date Granted:</b> ${formatLongDate(record.dateGranted)}</div>
           <button type="button" class="btn-secondary due-date-display-btn ${isPastDue ? "past-due-cell" : ""}" data-index="${index}">Due Date: ${formatLongDate(dueDate)}</button>
