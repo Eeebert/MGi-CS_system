@@ -1333,6 +1333,22 @@ function showMessage(text, type = "success") {
   }, 3000);
 }
 
+function showToast(text, type = "success") {
+  if (toast) {
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+    }
+    toast.textContent = text;
+    toast.className = `toast show ${type}`;
+    toastTimer = setTimeout(() => {
+      toast.className = "toast";
+    }, 1500);
+    return;
+  }
+
+  showMessage(text, type);
+}
+
 function updateDashboardStats() {
   const records = getRecords().filter((record) => record?.isSettled !== true);
   const totalLoans = records.length;
@@ -1510,6 +1526,21 @@ function formatUpperDate(isoDate) {
 function formatPlainAmount(value) {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function formatBackupTimestamp(dateValue) {
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return toIsoDate(new Date()).replace(/-/g, "") + "_000000";
+  }
+
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const sec = String(date.getSeconds()).padStart(2, "0");
+  return `${yyyy}${mm}${dd}_${hh}${min}${sec}`;
 }
 
 function toggleCollectibleEditor(rowIndex, forceOpen = false) {
@@ -1877,65 +1908,79 @@ async function exportVisibleRecordsToWord() {
 }
 
 async function exportToExcel() {
-  const rows = getVisibleRecords(getRecords());
-  if (rows.length === 0) {
-    showMessage("No records to export.", "error");
-    return;
-  }
+  try {
+    const visibleRows = getVisibleRecords();
+    if (visibleRows.length === 0) {
+      showMessage("No records to export.", "error");
+      showToast("Backup failed", "error");
+      return;
+    }
 
-  // Prepare CSV data
-  const headers = [
-    "Name of the Borrower",
-    "Address",
-    "Contact Number",
-    "Co-Maker",
-    "Loan Type",
-    "Purpose",
-    "Amount",
-    "Interest",
-    "Mode of Payment",
-    "Date Granted",
-    "Due Date",
-    "Payment History",
-  ];
-
-  const csvRows = rows.map(({ record }) => {
-    const paymentHistory = getPaymentHistory(record) || [];
-    const paymentSummary = paymentHistory.length > 0
-      ? paymentHistory.map(p => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatPlainAmount(p.amount || 0)}`).join("; ")
-      : "No payments";
-    
-    return [
-      escapeCSV(record.name || ""),
-      escapeCSV(record.address || ""),
-      escapeCSV(record.contactNumber || ""),
-      escapeCSV(record.coMaker || ""),
-      escapeCSV(record.payableWithin || ""),
-      escapeCSV(record.purposeOfLoan || ""),
-      formatPlainAmount(record.amount || 0),
-      formatPlainAmount(record.interestRate || 0),
-      escapeCSV(record.modeOfPayment || ""),
-      formatUpperDate(toIsoDate(new Date(record.dateGranted || ""))),
-      formatUpperDate(toIsoDate(new Date(record.dueDate || ""))),
-      escapeCSV(paymentSummary),
+    // Prepare CSV data
+    const headers = [
+      "Name of the Borrower",
+      "Address",
+      "Contact Number",
+      "Co-Maker",
+      "Account Officers",
+      "Loan Type",
+      "Purpose",
+      "Amount",
+      "Interest",
+      "Mode of Payment",
+      "Date Granted",
+      "Due Date",
+      "Payment History",
     ];
-  });
 
-  // Build CSV content
-  const csvContent = [
-    headers.join(","),
-    ...csvRows.map(row => row.join(",")),
-  ].join("\n");
+    const csvRows = visibleRows.map(({ record }) => {
+      const normalizedRecord = {
+        ...record,
+        accountOfficer: String(record?.accountOfficer || currentOfficer || "").trim(),
+      };
+      const paymentHistory = getPaymentHistory(record) || [];
+      const paymentSummary = paymentHistory.length > 0
+        ? paymentHistory.map(p => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatPlainAmount(p.amount || 0)}`).join("; ")
+        : "No payments";
 
-  // Create and download file
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `mgi_backup_${formatBackupTimestamp(new Date())}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-  showToast("Exported to Excel", "success");
+      return [
+        escapeCSV(normalizedRecord.name || ""),
+        escapeCSV(normalizedRecord.address || ""),
+        escapeCSV(normalizedRecord.contactNumber || ""),
+        escapeCSV(normalizedRecord.coMaker || ""),
+        escapeCSV(normalizedRecord.accountOfficer || ""),
+        escapeCSV(normalizedRecord.payableWithin || ""),
+        escapeCSV(normalizedRecord.purposeOfLoan || ""),
+        formatPlainAmount(normalizedRecord.amount || 0),
+        formatPlainAmount(normalizedRecord.interestRate || 0),
+        escapeCSV(normalizedRecord.modeOfPayment || ""),
+        formatUpperDate(toIsoDate(new Date(normalizedRecord.dateGranted || ""))),
+        formatUpperDate(toIsoDate(new Date(normalizedRecord.dueDate || ""))),
+        escapeCSV(paymentSummary),
+      ];
+    });
+
+    // Build CSV content
+    const csvContent = [
+      headers.join(","),
+      ...csvRows.map((row) => row.join(",")),
+    ].join("\n");
+
+    // Create and download file
+    const officerSlug = toOfficerSlug(currentOfficer || "officer");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `officer_${officerSlug}_backup_${formatBackupTimestamp(new Date())}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("Exported to Excel", "success");
+  } catch (error) {
+    console.error("[excel-backup] export failed", error);
+    showMessage("Unable to export Excel backup right now.", "error");
+    showToast("Backup failed", "error");
+  }
 }
 
 // Helper function to escape CSV values
