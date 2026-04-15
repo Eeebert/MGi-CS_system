@@ -23,6 +23,7 @@ const exportWordBtn = document.getElementById("export-word");
 const backupDataBtn = document.getElementById("backup-data");
 const restoreBackupBtn = document.getElementById("restore-backup");
 const restoreBackupInput = document.getElementById("restore-backup-input");
+const backupToExcelBtn = document.getElementById("backup-to-excel");
 const backupStatusNote = document.getElementById("backup-status-note");
 const toast = document.getElementById("toast");
 const writeOffModal = document.getElementById("write-off-modal");
@@ -3044,6 +3045,78 @@ async function exportVisibleRecords() {
   showToast("Exported Word file", "success");
 }
 
+async function exportToExcel() {
+  const rows = getVisibleRecords(getRecords());
+  if (rows.length === 0) {
+    showMessage("No records to export.", "error");
+    return;
+  }
+
+  // Prepare CSV data
+  const headers = [
+    "Name of the Borrower",
+    "Address",
+    "Contact Number",
+    "Co-Maker",
+    "Loan Type",
+    "Purpose",
+    "Amount",
+    "Interest",
+    "Mode of Payment",
+    "Date Granted",
+    "Due Date",
+    "Payment History",
+  ];
+
+  const csvRows = rows.map(({ record }) => {
+    const paymentHistory = getPaymentHistory(record) || [];
+    const paymentSummary = paymentHistory.length > 0
+      ? paymentHistory.map(p => `${formatUpperDate(toIsoDate(new Date(p.date || "")))}: ${formatPlainAmount(p.amount || 0)}`).join("; ")
+      : "No payments";
+    
+    return [
+      escapeCSV(record.name || ""),
+      escapeCSV(record.address || ""),
+      escapeCSV(record.contactNumber || ""),
+      escapeCSV(record.coMaker || ""),
+      escapeCSV(record.payableWithin || ""),
+      escapeCSV(record.purposeOfLoan || ""),
+      formatPlainAmount(record.amount || 0),
+      formatPlainAmount(record.interestRate || 0),
+      escapeCSV(record.modeOfPayment || ""),
+      formatUpperDate(toIsoDate(new Date(record.dateGranted || ""))),
+      formatUpperDate(toIsoDate(new Date(record.dueDate || ""))),
+      escapeCSV(paymentSummary),
+    ];
+  });
+
+  // Build CSV content
+  const csvContent = [
+    headers.join(","),
+    ...csvRows.map(row => row.join(",")),
+  ].join("\n");
+
+  // Create and download file
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mgi_backup_${formatBackupTimestamp(new Date())}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  showToast("Exported to Excel", "success");
+}
+
+// Helper function to escape CSV values
+function escapeCSV(value) {
+  if (!value) return '""';
+  const str = String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 async function downloadFullBackup() {
   const localBackup = collectComprehensiveLocalBackup();
 
@@ -5228,6 +5301,7 @@ filterDueDateInput.addEventListener("input", renderRecords);
 filterPayableSelect.addEventListener("change", renderRecords);
 sortBySelect.addEventListener("change", renderRecords);
 exportWordBtn.addEventListener("click", exportVisibleRecords);
+backupToExcelBtn?.addEventListener("click", exportToExcel);
 
 initPurposeLoanSelects();
 renderAddressSuggestions();

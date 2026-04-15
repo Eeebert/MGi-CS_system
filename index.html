@@ -256,7 +256,7 @@
               <input type="date" id="test-date" />
             </label>
             <button id="use-today" class="btn-secondary" type="button">Use Today</button>
-            <button id="export-word" class="btn-secondary" type="button">Print to Word (.doc)</button>
+            <button id="export-word" class="btn-secondary" type="button"><img src="images/word_logo.png" alt="Word" style="width:16px; height:16px; margin-right:6px; vertical-align:middle;"> Print to Word (.doc)</button>
             <button id="clear-records" class="btn-danger is-hidden" type="button">Delete Checked</button>
           </div>
         </div>
@@ -417,6 +417,7 @@
       <div class="side-drawer-footer">
         <button id="backup-data" class="btn-secondary" type="button" style="width:100%;">Download Full System Backup (.json)</button>
         <button id="restore-backup" class="btn-secondary" type="button" style="width:100%; margin-top:8px;">Restore Full System Backup (.json)</button>
+        <button id="backup-to-excel" class="btn-secondary" type="button" style="width:100%; margin-top:8px; background: linear-gradient(180deg, #e8f5e9, #c8e6c9); border-color: #81c784; color: #1b5e20;"><img src="images/excel_logo.png" alt="Excel" style="width:16px; height:16px; margin-right:6px; vertical-align:middle;"> Backup to Excel</button>
         <input id="restore-backup-input" type="file" accept="application/json,.json" style="display:none;" />
         <p id="backup-status-note" class="side-drawer-note is-loading" role="status" aria-live="polite">Backup status: checking...</p>
         <button id="drawer-logout" class="btn-danger" type="button" style="width:100%;">Log Out</button>
