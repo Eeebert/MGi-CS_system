@@ -524,6 +524,8 @@ let paymentEntryRowIndex = -1;
 let writeOffPasswordResolver = null;
 let restoreAuthPasswordResolver = null;
 let openRemarksEditorRowIndex = -1;
+let openArrearsEditorRowIndex = -1;
+let openOtherArrearsEditorRowIndex = -1;
 let restoreBackupAuthorizedAt = 0;
 
 function getAuthSettings() {
@@ -1201,9 +1203,9 @@ function computeBaseTotalPayable(record) {
   return Number(record.amount || 0) + monthlyInterestAmount;
 }
 
-function computeCollectibleAmount(record) {
+function computeBaseCollectibleAmount(record) {
   const override = Number(record?.collectibleAmountOverride);
-  if (Number.isFinite(override) && override > 0) {
+  if (Number.isFinite(override) && override >= 0) {
     return override;
   }
 
@@ -1214,6 +1216,27 @@ function computeCollectibleAmount(record) {
     return computeBaseTotalPayable(record) / 60;
   }
   return 0;
+}
+
+function computeCollectibleAmount(record) {
+  const baseCollectible = computeBaseCollectibleAmount(record);
+  return baseCollectible + computeArrearsAmount(record) + computeOtherArrearsAmount(record);
+}
+
+function computeArrearsAmount(record) {
+  const manualArrears = Number(record?.manualArrearsAmount ?? 0);
+  if (!Number.isFinite(manualArrears) || manualArrears < 0) {
+    return 0;
+  }
+  return manualArrears;
+}
+
+function computeOtherArrearsAmount(record) {
+  const otherArrears = Number(record?.manualOtherArrearsAmount ?? 0);
+  if (!Number.isFinite(otherArrears) || otherArrears < 0) {
+    return 0;
+  }
+  return otherArrears;
 }
 
 function getCollectibleLabelForRecord(record) {
@@ -1402,10 +1425,15 @@ function renderRecords() {
       const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
       const payDate = String(record.payDate || dueDate);
       const collectibleAmount = computeCollectibleAmount(record);
-      const outstandingBalance = computeRemainingPayable(record);
+      const arrearsAmount = computeArrearsAmount(record);
+      const otherArrearsAmount = computeOtherArrearsAmount(record);
+      const paymentBreakdown = getOutstandingBreakdown(record);
+      const outstandingBalance = paymentBreakdown.outstandingBalance;
       const totalPaidAmount = getTotalPaidAmount(record);
       const paymentCount = getPaymentHistory(record).length;
       const effectiveInterestRate = getEffectiveInterestRate(record);
+      const arrearsType = record.arrearsType === "Principal" ? "Principal" : "Interest";
+      const otherArrearsType = record.otherArrearsType === "Principal" ? "Principal" : "Interest";
       const escapedRemarks = sanitize(String(record.remarks || ""));
       const settledActive = record?.isSettled === true;
       const settledDate = String(record?.settledDate || "").trim();
@@ -1452,10 +1480,34 @@ function renderRecords() {
               <button type="button" class="btn-secondary save-collectible-btn" data-index="${index}">Save</button>
             </div>
           </td>
-          <td>${formatCurrency(outstandingBalance)}</td>
+          <td>
+            ${formatCurrency(outstandingBalance)}
+            <br />
+            <small class="mini-note">Interest: ${formatCurrency(paymentBreakdown.interestOutstanding)}</small>
+          </td>
           <td>
             <button type="button" class="btn-secondary move-pay-date-display-btn" data-index="${index}">Move Pay Date: ${formatLongDate(payDate)}</button>
             <input type="date" class="move-pay-date-input due-date-input-hidden" data-index="${index}" value="${sanitize(payDate)}" />
+            <button type="button" class="btn-secondary arrears-display-btn" data-index="${index}">Arrears: ${formatCurrency(arrearsAmount)} (${arrearsType})</button>
+            <div class="paid-controls arrears-editor ${openArrearsEditorRowIndex === index ? "" : "arrears-editor-hidden"}" data-index="${index}">
+              <small class="mini-note">${arrearsType}</small>
+              <input type="text" class="arrears-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(arrearsAmount))}" inputmode="decimal" autocomplete="off" />
+              <select class="arrears-type-select" data-index="${index}">
+                <option value="Principal" ${arrearsType === "Principal" ? "selected" : ""}>Principal</option>
+                <option value="Interest" ${arrearsType === "Interest" ? "selected" : ""}>Interest</option>
+              </select>
+              <button type="button" class="btn-secondary save-arrears-btn" data-index="${index}">Save</button>
+            </div>
+            <button type="button" class="btn-secondary other-arrears-display-btn" data-index="${index}">Other Arrears: ${formatCurrency(otherArrearsAmount)} (${otherArrearsType})</button>
+            <div class="paid-controls other-arrears-editor ${openOtherArrearsEditorRowIndex === index ? "" : "other-arrears-editor-hidden"}" data-index="${index}">
+              <small class="mini-note">${otherArrearsType}</small>
+              <input type="text" class="other-arrears-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(otherArrearsAmount))}" inputmode="decimal" autocomplete="off" />
+              <select class="other-arrears-type-select" data-index="${index}">
+                <option value="Principal" ${otherArrearsType === "Principal" ? "selected" : ""}>Principal</option>
+                <option value="Interest" ${otherArrearsType === "Interest" ? "selected" : ""}>Interest</option>
+              </select>
+              <button type="button" class="btn-secondary save-other-arrears-btn" data-index="${index}">Save</button>
+            </div>
           </td>
           <td>
             <div class="remarks-controls">
@@ -1559,6 +1611,46 @@ function toggleCollectibleEditor(rowIndex, forceOpen = false) {
   const currentlyOpen = !editor.classList.contains("collectible-editor-hidden");
   const shouldOpen = forceOpen ? true : !currentlyOpen;
   editor.classList.toggle("collectible-editor-hidden", !shouldOpen);
+}
+
+function toggleArrearsEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  const shouldOpen = forceOpen ? true : openArrearsEditorRowIndex !== rowIndex;
+  openArrearsEditorRowIndex = shouldOpen ? rowIndex : -1;
+  if (shouldOpen) {
+    openOtherArrearsEditorRowIndex = -1;
+  }
+  renderRecords();
+
+  if (shouldOpen) {
+    const arrearsInputEl = body?.querySelector(`.arrears-input[data-index="${rowIndex}"]`);
+    if (arrearsInputEl instanceof HTMLInputElement) {
+      arrearsInputEl.focus();
+    }
+  }
+}
+
+function toggleOtherArrearsEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  const shouldOpen = forceOpen ? true : openOtherArrearsEditorRowIndex !== rowIndex;
+  openOtherArrearsEditorRowIndex = shouldOpen ? rowIndex : -1;
+  if (shouldOpen) {
+    openArrearsEditorRowIndex = -1;
+  }
+  renderRecords();
+
+  if (shouldOpen) {
+    const otherArrearsInputEl = body?.querySelector(`.other-arrears-input[data-index="${rowIndex}"]`);
+    if (otherArrearsInputEl instanceof HTMLInputElement) {
+      otherArrearsInputEl.focus();
+    }
+  }
 }
 
 function toggleRemarksEditor(rowIndex, forceOpen = false) {
@@ -1727,6 +1819,10 @@ function applyPaymentForRow(rowIndex, paidAmount) {
 
   const allocation = splitPaymentAmount(record, paidAmount);
   const isHatagMode = isHatagHatagActive(record);
+  const remainingInterestAfterPayment = Math.max(
+    0,
+    allocation.interestOutstanding - (isHatagMode ? paidAmount : allocation.interestPaid)
+  );
   if (!isHatagMode && allocation.appliedAmount <= 0) {
     showMessage("There is no outstanding balance to pay.", "error");
     return false;
@@ -1749,6 +1845,17 @@ function applyPaymentForRow(rowIndex, paidAmount) {
     interestPaid,
   });
   record.paymentHistory = history;
+
+  // If there is unpaid interest after payment, reflect it as arrears.
+  // Only unpaid interest goes to arrears — principal shortfall is just the remaining balance.
+  if (!isHatagMode && remainingInterestAfterPayment > 0) {
+    const computedArrears = remainingInterestAfterPayment;
+    const currentArrears = computeArrearsAmount(record);
+    record.manualArrearsAmount = Math.max(currentArrears, computedArrears);
+    if (record.arrearsType !== "Principal" && record.arrearsType !== "Interest") {
+      record.arrearsType = "Interest";
+    }
+  }
 
   setRecords(records);
   renderRecords();
@@ -2586,8 +2693,8 @@ body?.addEventListener("click", async (event) => {
     const updatedCollectible = parseAmountInput(collectibleInputEl instanceof HTMLInputElement ? collectibleInputEl.value : "0");
     const selectedPeriod = periodSelectEl instanceof HTMLSelectElement ? periodSelectEl.value : "Daily";
 
-    if (!Number.isFinite(updatedCollectible) || updatedCollectible <= 0) {
-      showMessage("Collectible amount must be greater than 0.", "error");
+    if (!Number.isFinite(updatedCollectible) || updatedCollectible < 0) {
+      showMessage("Collectible amount cannot be negative.", "error");
       return;
     }
 
@@ -2603,6 +2710,96 @@ body?.addEventListener("click", async (event) => {
     renderRecords();
     showMessage("Collectible updated.", "success");
     toggleCollectibleEditor(rowIndex, false);
+    return;
+  }
+
+  const arrearsDisplayBtn = event.target.closest(".arrears-display-btn");
+  if (arrearsDisplayBtn) {
+    const rowIndex = Number(arrearsDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to edit arrears.", "error");
+      return;
+    }
+
+    toggleArrearsEditor(rowIndex);
+    return;
+  }
+
+  const saveArrearsBtn = event.target.closest(".save-arrears-btn");
+  if (saveArrearsBtn) {
+    const rowIndex = Number(saveArrearsBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to save arrears.", "error");
+      return;
+    }
+
+    const arrearsInputEl = body?.querySelector(`.arrears-input[data-index="${rowIndex}"]`);
+    const arrearsTypeSelectEl = body?.querySelector(`.arrears-type-select[data-index="${rowIndex}"]`);
+    const updatedArrears = parseAmountInput(arrearsInputEl instanceof HTMLInputElement ? arrearsInputEl.value : "0");
+    const selectedType = arrearsTypeSelectEl instanceof HTMLSelectElement ? arrearsTypeSelectEl.value : "Interest";
+
+    if (!Number.isFinite(updatedArrears) || updatedArrears < 0) {
+      showMessage("Arrears amount cannot be negative.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    records[rowIndex].manualArrearsAmount = updatedArrears;
+    records[rowIndex].arrearsType = selectedType === "Principal" ? "Principal" : "Interest";
+    setRecords(records);
+    openArrearsEditorRowIndex = -1;
+    renderRecords();
+    showMessage("Arrears updated.", "success");
+    return;
+  }
+
+  const otherArrearsDisplayBtn = event.target.closest(".other-arrears-display-btn");
+  if (otherArrearsDisplayBtn) {
+    const rowIndex = Number(otherArrearsDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to edit other arrears.", "error");
+      return;
+    }
+
+    toggleOtherArrearsEditor(rowIndex);
+    return;
+  }
+
+  const saveOtherArrearsBtn = event.target.closest(".save-other-arrears-btn");
+  if (saveOtherArrearsBtn) {
+    const rowIndex = Number(saveOtherArrearsBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to save other arrears.", "error");
+      return;
+    }
+
+    const otherArrearsInputEl = body?.querySelector(`.other-arrears-input[data-index="${rowIndex}"]`);
+    const otherArrearsTypeSelectEl = body?.querySelector(`.other-arrears-type-select[data-index="${rowIndex}"]`);
+    const updatedOtherArrears = parseAmountInput(otherArrearsInputEl instanceof HTMLInputElement ? otherArrearsInputEl.value : "0");
+    const selectedType = otherArrearsTypeSelectEl instanceof HTMLSelectElement ? otherArrearsTypeSelectEl.value : "Interest";
+
+    if (!Number.isFinite(updatedOtherArrears) || updatedOtherArrears < 0) {
+      showMessage("Other arrears amount cannot be negative.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    records[rowIndex].manualOtherArrearsAmount = updatedOtherArrears;
+    records[rowIndex].otherArrearsType = selectedType === "Principal" ? "Principal" : "Interest";
+    setRecords(records);
+    openOtherArrearsEditorRowIndex = -1;
+    renderRecords();
+    showMessage("Other arrears updated.", "success");
     return;
   }
 
