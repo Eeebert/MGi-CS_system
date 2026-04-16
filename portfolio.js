@@ -262,6 +262,14 @@ function getRecords() {
   return merged.length > 0 ? merged : localGlobalRecords;
 }
 
+function getSettledDashboardParityRecords(sourceRecords) {
+  const mainRecords = (Array.isArray(sourceRecords) ? sourceRecords : []).filter(
+    (record) => !String(record?.accountOfficer || "").trim()
+  );
+  const localOfficerSettled = getLocalOfficerRecords().filter((record) => record?.isSettled === true);
+  return dedupeRecords([...mainRecords, ...localOfficerSettled]).filter((record) => record?.isSettled === true);
+}
+
 async function loadRecordsFromServer() {
   const officerNames = getKnownOfficerNames();
 
@@ -638,6 +646,7 @@ function getTypeKey(payableWithin) {
 function renderTypeBreakdown(records) {
   const sourceRecords = Array.isArray(records) ? records : [];
   const openRecords = sourceRecords.filter((record) => record?.isSettled !== true && computeOutstandingBalance(record) > 0);
+  const settledRecordsForDashboardParity = getSettledDashboardParityRecords(sourceRecords);
 
   const counts = {
     monthlyOpen: 0,
@@ -672,18 +681,20 @@ function renderTypeBreakdown(records) {
 
   sourceRecords.forEach((record) => {
     const outstanding = computeOutstandingBalance(record);
-    const isSettled = record?.isSettled === true || outstanding <= 0;
+    const isSettled = record?.isSettled === true;
 
     if (!isSettled && record.accountOfficer && String(record.accountOfficer).trim()) {
       accountOfficerCount += 1;
       accountOfficerBalance += outstanding;
     }
 
-    if (isSettled) {
-      settledCount += 1;
-      settledBalance += outstanding;
-    }
   });
+
+  settledCount = settledRecordsForDashboardParity.length;
+  settledBalance = settledRecordsForDashboardParity.reduce(
+    (sum, record) => sum + computeOutstandingBalance(record),
+    0
+  );
 
   if (typeMonthlyOpen) typeMonthlyOpen.textContent = String(counts.monthlyOpen);
   if (typeBiMonthly) typeBiMonthly.textContent = String(counts.biMonthly);

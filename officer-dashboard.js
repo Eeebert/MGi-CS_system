@@ -530,6 +530,8 @@ let openRebateEditorRowIndex = -1;
 let openRemarksEditorRowIndex = -1;
 let openArrearsEditorRowIndex = -1;
 let openOtherArrearsEditorRowIndex = -1;
+const arrearsInputDrafts = new Map();
+const otherArrearsInputDrafts = new Map();
 let restoreBackupAuthorizedAt = 0;
 
 function getAuthSettings() {
@@ -551,6 +553,39 @@ function getAuthSettings() {
   }
 }
 
+function setAmountDraftForRecord(record, draftMap, rawValue) {
+  if (!record || !(draftMap instanceof Map)) {
+    return;
+  }
+  const key = buildRecordFingerprint(record);
+  draftMap.set(key, normalizeAmountInput(rawValue));
+}
+
+function clearAmountDraftForRecord(record, draftMap) {
+  if (!record || !(draftMap instanceof Map)) {
+    return;
+  }
+  const key = buildRecordFingerprint(record);
+  draftMap.delete(key);
+}
+
+function getAmountDraftForRecord(record, draftMap, fallbackAmount) {
+  if (record && draftMap instanceof Map) {
+    const key = buildRecordFingerprint(record);
+    if (draftMap.has(key)) {
+      return normalizeAmountInput(draftMap.get(key));
+    }
+  }
+  return formatAmountInputOrBlank(fallbackAmount);
+}
+
+function formatAmountInputOrBlank(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return "";
+  }
+  return normalizeAmountInput(formatPlainAmount(amount));
+}
 function getWriteOffPassword() {
   return String(getAuthSettings().mainPassword || DEFAULT_AUTH_SETTINGS.mainPassword);
 }
@@ -648,7 +683,42 @@ function hasRestoreBackupAuthorization() {
 }
 
 function ensureSyncStatusElement() {
-  return null;
+  if (syncStatusElement instanceof HTMLElement) {
+    return syncStatusElement;
+  }
+
+  syncStatusElement = document.getElementById("sync-status-badge");
+  return syncStatusElement instanceof HTMLElement ? syncStatusElement : null;
+}
+
+function getSyncStatusMessage(state, detail) {
+  const normalizedDetail = String(detail || "").trim();
+
+  if (!normalizedDetail) {
+    return "Sync: idle";
+  }
+
+  if (normalizedDetail === "save pending retry" || normalizedDetail === "waiting server update") {
+    return "Sync: Saved locally, waiting for server";
+  }
+
+  if (normalizedDetail === "saving..." || normalizedDetail === "save in progress") {
+    return "Sync: Saving to server...";
+  }
+
+  if (normalizedDetail === "syncing...") {
+    return "Sync: Checking server...";
+  }
+
+  if (normalizedDetail === "local fallback") {
+    return "Sync: Server unavailable, using local data";
+  }
+
+  if (normalizedDetail === "offline (server-only mode)") {
+    return "Sync: Offline";
+  }
+
+  return `Sync: ${normalizedDetail}`;
 }
 
 function normalizeOfficerName(rawOfficer) {
@@ -703,7 +773,9 @@ function setSyncStatus(state, detail) {
     badge.classList.add("is-idle");
   }
 
-  badge.textContent = detail ? `Sync: ${detail}` : "Sync: idle";
+  const message = getSyncStatusMessage(state, detail);
+  badge.textContent = message;
+  badge.title = message;
 }
 
 function getOfficerStorageKey() {
@@ -736,6 +808,15 @@ function dedupeRecords(records) {
   }
 
   return merged;
+}
+
+function isMissingUnsyncedLocalRecords(localRecords, serverRecords) {
+  const localList = Array.isArray(localRecords) ? localRecords : [];
+  const serverFingerprints = new Set(
+    (Array.isArray(serverRecords) ? serverRecords : []).map((record) => buildRecordFingerprint(record))
+  );
+
+  return localList.some((record) => !serverFingerprints.has(buildRecordFingerprint(record)));
 }
 
 async function loadOfficerServerRecords(stateKeys) {
@@ -907,13 +988,14 @@ async function loadRecordsFromServer() {
 
     const shouldProtectUnsyncedData = (
       hasUnsyncedLocalChanges &&
-      mergedPayload.length === 0 &&
-      recordsCache.length > 0
+      recordsCache.length > 0 &&
+      isMissingUnsyncedLocalRecords(recordsCache, mergedPayload)
     );
     if (shouldProtectUnsyncedData) {
-      console.info("[sync][officer] Keeping unsynced local records while server save is failing", {
+      console.info("[sync][officer] Keeping unsynced local records while server payload is stale", {
         officer: currentOfficer,
         cacheRecords: recordsCache.length,
+        serverRecords: mergedPayload.length,
       });
       setSyncStatus("error", "save pending retry");
       schedulePendingSaveRetry();
@@ -1518,6 +1600,12 @@ function renderRecords() {
       const writeOffFreezeDate = String(record.writeOffDate || "").trim();
       const hatagHatagActive = isHatagHatagActive(record);
       const hatagHatagDate = String(record.hatagHatagDate || "").trim();
+      const arrearsInputValue = openArrearsEditorRowIndex === index
+        ? getAmountDraftForRecord(record, arrearsInputDrafts, arrearsAmount)
+        : formatAmountInputOrBlank(arrearsAmount);
+      const otherArrearsInputValue = openOtherArrearsEditorRowIndex === index
+        ? getAmountDraftForRecord(record, otherArrearsInputDrafts, otherArrearsAmount)
+        : formatAmountInputOrBlank(otherArrearsAmount);
       return `
         <tr>
           <td>
@@ -1568,7 +1656,7 @@ function renderRecords() {
             <button type="button" class="btn-secondary arrears-display-btn" data-index="${index}">Arrears: ${formatCurrency(arrearsAmount)} (${arrearsType})</button>
             <div class="paid-controls arrears-editor ${openArrearsEditorRowIndex === index ? "" : "arrears-editor-hidden"}" data-index="${index}">
               <small class="mini-note">${arrearsType}</small>
-              <input type="text" class="arrears-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(arrearsAmount))}" inputmode="decimal" autocomplete="off" />
+              <input type="text" class="arrears-input" data-index="${index}" value="${arrearsInputValue}" inputmode="decimal" autocomplete="off" />
               <select class="arrears-type-select" data-index="${index}">
                 <option value="Principal" ${arrearsType === "Principal" ? "selected" : ""}>Principal</option>
                 <option value="Interest" ${arrearsType === "Interest" ? "selected" : ""}>Interest</option>
@@ -1578,7 +1666,7 @@ function renderRecords() {
             <button type="button" class="btn-secondary other-arrears-display-btn" data-index="${index}">Other Arrears: ${formatCurrency(otherArrearsAmount)} (${otherArrearsType})</button>
             <div class="paid-controls other-arrears-editor ${openOtherArrearsEditorRowIndex === index ? "" : "other-arrears-editor-hidden"}" data-index="${index}">
               <small class="mini-note">${otherArrearsType}</small>
-              <input type="text" class="other-arrears-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(otherArrearsAmount))}" inputmode="decimal" autocomplete="off" />
+              <input type="text" class="other-arrears-input" data-index="${index}" value="${otherArrearsInputValue}" inputmode="decimal" autocomplete="off" />
               <select class="other-arrears-type-select" data-index="${index}">
                 <option value="Principal" ${otherArrearsType === "Principal" ? "selected" : ""}>Principal</option>
                 <option value="Interest" ${otherArrearsType === "Interest" ? "selected" : ""}>Interest</option>
@@ -1717,6 +1805,9 @@ function toggleArrearsEditor(rowIndex, forceOpen = false) {
   openArrearsEditorRowIndex = shouldOpen ? rowIndex : -1;
   if (shouldOpen) {
     openOtherArrearsEditorRowIndex = -1;
+  } else {
+    const record = getRecords()[rowIndex];
+    clearAmountDraftForRecord(record, arrearsInputDrafts);
   }
   renderRecords();
 
@@ -1737,6 +1828,9 @@ function toggleOtherArrearsEditor(rowIndex, forceOpen = false) {
   openOtherArrearsEditorRowIndex = shouldOpen ? rowIndex : -1;
   if (shouldOpen) {
     openArrearsEditorRowIndex = -1;
+  } else {
+    const record = getRecords()[rowIndex];
+    clearAmountDraftForRecord(record, otherArrearsInputDrafts);
   }
   renderRecords();
 
@@ -1994,12 +2088,10 @@ async function exportVisibleRecordsToWord() {
   const safeOfficerSlug = officerName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "unknown";
 
   const headerRow = `
-          <td class="outstanding-balance-cell">
-            <span class="outstanding-balance-value">${formatCurrency(outstandingBalance)}</span>
-            <small class="mini-note">Interest: ${formatCurrency(paymentBreakdown.interestOutstanding)}</small>
-            ${paymentBreakdown.rebateAmount > 0 ? `<small class="mini-note rebate-note">Rebate: ${formatCurrency(paymentBreakdown.rebateAmount)}</small>` : ""}
-            ${settledActive ? "" : `<div class="outstanding-btn-row"><button type="button" class="btn-secondary rebate-display-btn" data-index="${index}">Rebate</button><button type="button" class="pay-principal-only-btn" data-index="${index}" ${paymentBreakdown.principalOutstanding <= 0 || hatagHatagActive ? "disabled" : ""}>Pay Principal Only</button></div>`}
-            ${settledActive ? "" : `<div class="paid-controls rebate-editor ${openRebateEditorRowIndex === index ? "" : "rebate-editor-hidden"}" data-index="${index}"><input type="text" class="rebate-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(getRebateAmount(record)))}" inputmode="decimal" autocomplete="off" /><button type="button" class="btn-secondary save-rebate-btn" data-index="${index}">Save</button></div>`}
+    <tr>
+      <th>Name of the Borrower</th>
+      <th>Amount</th>
+      <th>Date Granted</th>
       <th>Due Date</th>
       <th>Outstanding Balance</th>
       <th>Amount Collectible</th>
@@ -2548,6 +2640,15 @@ body?.addEventListener("input", (event) => {
     target.classList.contains("other-arrears-input")
   ) {
     target.value = normalizeAmountInput(target.value);
+    const rowIndex = Number(target.dataset.index);
+    if (Number.isInteger(rowIndex) && rowIndex >= 0) {
+      const record = getRecords()[rowIndex];
+      if (target.classList.contains("arrears-input")) {
+        setAmountDraftForRecord(record, arrearsInputDrafts, target.value);
+      } else if (target.classList.contains("other-arrears-input")) {
+        setAmountDraftForRecord(record, otherArrearsInputDrafts, target.value);
+      }
+    }
   }
 });
 
@@ -2962,6 +3063,7 @@ body?.addEventListener("click", async (event) => {
 
     records[rowIndex].manualArrearsAmount = updatedArrears;
     records[rowIndex].arrearsType = selectedType === "Principal" ? "Principal" : "Interest";
+    clearAmountDraftForRecord(records[rowIndex], arrearsInputDrafts);
     setRecords(records);
     openArrearsEditorRowIndex = -1;
     renderRecords();
@@ -3007,6 +3109,7 @@ body?.addEventListener("click", async (event) => {
 
     records[rowIndex].manualOtherArrearsAmount = updatedOtherArrears;
     records[rowIndex].otherArrearsType = selectedType === "Principal" ? "Principal" : "Interest";
+    clearAmountDraftForRecord(records[rowIndex], otherArrearsInputDrafts);
     setRecords(records);
     openOtherArrearsEditorRowIndex = -1;
     renderRecords();
@@ -3597,6 +3700,30 @@ function closeDrawer() {
   hamburgerBtn?.classList.remove("is-open");
 }
 
+function shouldPauseAutoRefreshSync() {
+  if (
+    openRebateEditorRowIndex >= 0 ||
+    openArrearsEditorRowIndex >= 0 ||
+    openOtherArrearsEditorRowIndex >= 0 ||
+    openRemarksEditorRowIndex >= 0
+  ) {
+    return true;
+  }
+
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement)) {
+    return false;
+  }
+
+  return (
+    activeElement.classList.contains("collectible-edit-input") ||
+    activeElement.classList.contains("rebate-input") ||
+    activeElement.classList.contains("arrears-input") ||
+    activeElement.classList.contains("other-arrears-input") ||
+    activeElement.classList.contains("remarks-input")
+  );
+}
+
 hamburgerBtn?.addEventListener("click", openDrawer);
 drawerCloseBtn?.addEventListener("click", closeDrawer);
 drawerOverlay?.addEventListener("click", closeDrawer);
@@ -3645,6 +3772,9 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
 
   // Keep synced with server every 5 seconds so all devices stay in sync
   setInterval(() => {
+    if (shouldPauseAutoRefreshSync()) {
+      return;
+    }
     loadRecordsFromServer().then(() => renderRecords());
   }, 5000);
 
@@ -3653,6 +3783,9 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
       syncRecordsToServer(getRecords());
     }
     refreshBackupHealthStatus();
+    if (shouldPauseAutoRefreshSync()) {
+      return;
+    }
     loadRecordsFromServer().then(() => renderRecords());
   });
 }
