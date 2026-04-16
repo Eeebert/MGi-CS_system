@@ -4137,8 +4137,11 @@ function renderRecords() {
 
   if (rows.length === 0) {
     pruneSettledRecordSelection([]);
-    body.innerHTML = `<tr><td colspan="7" class="empty">${isSettledDashboardView ? "No settled accounts yet." : "No records yet."}</td></tr>`;
     const hasActiveFilter = hasActiveFilters(activeFilters);
+    const emptyMessage = hasActiveFilter
+      ? (isSettledDashboardView ? "No settled accounts match current filters." : "No records match current filters.")
+      : (isSettledDashboardView ? "No settled accounts yet." : "No records yet.");
+    body.innerHTML = `<tr><td colspan="7" class="empty">${emptyMessage}</td></tr>`;
 
     if (viewRecords.length > 0 && hasActiveFilter) {
       setDiagnosticsPanel(
