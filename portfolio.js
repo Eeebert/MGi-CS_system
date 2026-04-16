@@ -300,13 +300,13 @@ async function loadRecordsFromServer() {
 
     const allRecords = dedupeRecords([...mergedOfficerRecords, ...cleanGlobalRecords]);
 
-    if (allRecords.length > 0) {
-      recordsCache = allRecords;
-      didLoadServerRecords = true;
-      return;
-    }
+    // Use server payload as source of truth (even when empty) so all devices
+    // reflect the same state instead of diverging to local-only fallback data.
+    recordsCache = allRecords;
+    didLoadServerRecords = true;
+    return;
   } catch {
-    // Fall back to localStorage-backed records when server state is unavailable.
+    // Keep local fallback only when server fetch throws at runtime.
   }
 
   recordsCache = getRecords();
