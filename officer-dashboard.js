@@ -521,8 +521,12 @@ const RESTORE_BACKUP_AUTH_WINDOW_MS = 30000;
 let hasUnsyncedLocalChanges = false;
 let pendingRetryTimer = null;
 let paymentEntryRowIndex = -1;
+const PAYMENT_MODE_STANDARD = "standard";
+const PAYMENT_MODE_PRINCIPAL_ONLY = "principal-only";
+let paymentEntryMode = PAYMENT_MODE_STANDARD;
 let writeOffPasswordResolver = null;
 let restoreAuthPasswordResolver = null;
+let openRebateEditorRowIndex = -1;
 let openRemarksEditorRowIndex = -1;
 let openArrearsEditorRowIndex = -1;
 let openOtherArrearsEditorRowIndex = -1;
@@ -1132,6 +1136,21 @@ function getTotalPaidAmount(record) {
   return totalPaid;
 }
 
+function getTotalInterestReducedAmount(record) {
+  const history = getPaymentHistory(record);
+  if (history.length === 0) {
+    return 0;
+  }
+
+  return history.reduce((sum, item) => {
+    const interestReduced = Number(item.interestReduced || 0);
+    if (!Number.isFinite(interestReduced) || interestReduced <= 0) {
+      return sum;
+    }
+    return sum + interestReduced;
+  }, 0);
+}
+
 function getWeeklyInterestPeriodsFromDate(dateGranted, referenceDate) {
   const startDate = new Date(`${dateGranted}T00:00:00`);
   const referenceDay = referenceDate instanceof Date ? referenceDate : new Date(`${referenceDate}T00:00:00`);
@@ -1175,11 +1194,17 @@ function getWeeklyRunningState(record, referenceDate = getReferenceDate()) {
     outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
     const amountPaid = Math.max(0, Number(item.amount || 0));
+    const storedInterestPaid = Math.max(0, Number(item.interestPaid || 0));
+    const storedPrincipalPaid = Math.max(0, Number(item.principalPaid || 0));
     const interestOutstanding = Math.max(0, outstandingBalance - principalBalance);
-    const interestPaid = Math.min(amountPaid, interestOutstanding);
-    const principalPaid = Math.min(principalBalance, Math.max(0, amountPaid - interestPaid));
+    const interestPaid = Math.min(interestOutstanding, storedInterestPaid || Math.min(amountPaid, interestOutstanding));
+    const principalPaid = Math.min(
+      principalBalance,
+      storedPrincipalPaid || Math.max(0, Math.min(amountPaid, outstandingBalance) - interestPaid)
+    );
+    const interestReduced = Math.max(0, Number(item.interestReduced || 0));
 
-    outstandingBalance = Math.max(0, outstandingBalance - amountPaid);
+    outstandingBalance = Math.max(0, outstandingBalance - amountPaid - interestReduced);
     principalBalance = Math.max(0, principalBalance - principalPaid);
     lastCycle = paymentCycles;
   }
@@ -1274,7 +1299,8 @@ function computeRemainingPayable(record) {
   }
   const grossPayable = computeBaseTotalPayable(record);
   const totalPaid = getTotalPaidAmount(record);
-  return Math.max(0, grossPayable - totalPaid);
+  const totalInterestReduced = getTotalInterestReducedAmount(record);
+  return Math.max(0, grossPayable - totalPaid - totalInterestReduced);
 }
 
 function getTotalPrincipalPaidAmount(record) {
@@ -1302,18 +1328,37 @@ function getPrincipalOutstandingAmount(record) {
   return Math.max(0, principalOutstanding);
 }
 
+function getRebateAmount(record) {
+  const rebateAmount = Number(record?.manualRebateAmount ?? 0);
+  if (!Number.isFinite(rebateAmount) || rebateAmount <= 0) {
+    return 0;
+  }
+  return rebateAmount;
+}
+
 function getOutstandingBreakdown(record) {
-  const outstandingBalance = Math.max(0, computeRemainingPayable(record));
+  const rawOutstandingBalance = Math.max(0, computeRemainingPayable(record));
   const principalBase = isWeeklyFixedLoan(record.payableWithin)
     ? getWeeklyRunningState(record, getReferenceDate()).principalBalance
     : getPrincipalOutstandingAmount(record);
-  const principalOutstanding = Math.min(outstandingBalance, principalBase);
-  const interestOutstanding = Math.max(0, outstandingBalance - principalOutstanding);
+  const rawPrincipalOutstanding = Math.min(rawOutstandingBalance, principalBase);
+  const rawInterestOutstanding = Math.max(0, rawOutstandingBalance - rawPrincipalOutstanding);
+  const paymentTarget = getRebateAmount(record);
+  const rebateAmount = paymentTarget > 0 && paymentTarget < rawOutstandingBalance
+    ? rawOutstandingBalance - paymentTarget
+    : 0;
+  const rebateAppliedToInterest = Math.min(rebateAmount, rawInterestOutstanding);
+  const rebateAppliedToPrincipal = Math.max(0, rebateAmount - rebateAppliedToInterest);
+  const principalOutstanding = Math.max(0, rawPrincipalOutstanding - rebateAppliedToPrincipal);
+  const interestOutstanding = Math.max(0, rawInterestOutstanding - rebateAppliedToInterest);
+  const outstandingBalance = principalOutstanding + interestOutstanding;
 
   return {
     outstandingBalance,
     principalOutstanding,
     interestOutstanding,
+    rawOutstandingBalance,
+    rebateAmount,
   };
 }
 
@@ -1345,6 +1390,38 @@ function splitPaymentAmount(record, paymentAmount) {
     principalPaid,
     appliedAmount: interestPaid + principalPaid,
   };
+}
+
+function splitPrincipalOnlyPayment(record, paymentAmount) {
+  const normalizedPayment = Number.isFinite(paymentAmount) ? Math.max(0, paymentAmount) : 0;
+  const { outstandingBalance, principalOutstanding, interestOutstanding } = getOutstandingBreakdown(record);
+  const principalPaid = Math.min(normalizedPayment, principalOutstanding);
+  const interestReduced = principalOutstanding > 0
+    ? Math.min(interestOutstanding, interestOutstanding * (principalPaid / principalOutstanding))
+    : 0;
+
+  return {
+    outstandingBalance,
+    principalOutstanding,
+    interestOutstanding,
+    interestPaid: 0,
+    principalPaid,
+    interestReduced,
+    appliedAmount: principalPaid,
+    outstandingReduction: principalPaid + interestReduced,
+  };
+}
+
+function getPaymentAllocation(record, paymentAmount, mode = PAYMENT_MODE_STANDARD) {
+  if (mode === PAYMENT_MODE_PRINCIPAL_ONLY) {
+    return splitPrincipalOnlyPayment(record, paymentAmount);
+  }
+
+  return splitPaymentAmount(record, paymentAmount);
+}
+
+function getPaymentModeLabel(mode = PAYMENT_MODE_STANDARD) {
+  return mode === PAYMENT_MODE_PRINCIPAL_ONLY ? "Principal Only" : "Standard";
 }
 
 function showMessage(text, type = "success") {
@@ -1613,6 +1690,24 @@ function toggleCollectibleEditor(rowIndex, forceOpen = false) {
   editor.classList.toggle("collectible-editor-hidden", !shouldOpen);
 }
 
+function toggleRebateEditor(rowIndex, forceOpen = false) {
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    return;
+  }
+
+  const shouldOpen = forceOpen ? true : openRebateEditorRowIndex !== rowIndex;
+  openRebateEditorRowIndex = shouldOpen ? rowIndex : -1;
+  renderRecords();
+
+  if (shouldOpen) {
+    const rebateInputEl = body?.querySelector(`.rebate-input[data-index="${rowIndex}"]`);
+    if (rebateInputEl instanceof HTMLInputElement) {
+      rebateInputEl.focus();
+      rebateInputEl.select();
+    }
+  }
+}
+
 function toggleArrearsEditor(rowIndex, forceOpen = false) {
   if (!Number.isInteger(rowIndex) || rowIndex < 0) {
     return;
@@ -1694,18 +1789,27 @@ function openPaymentHistoryModal(record, history) {
     return;
   }
 
+  let totalPaid = 0;
+  let totalRebate = 0;
   const rows = [...history]
     .reverse()
     .map((item, idx) => {
       const amountPaid = Number(item.amount || 0);
       const principalPaid = Number(item.principalPaid || 0);
       const interestPaid = Number(item.interestPaid || 0);
+      const itemRebateApplied = Math.max(0, Number(item.rebateApplied || 0));
+      totalPaid += amountPaid;
+      totalRebate += itemRebateApplied;
+
+      const amountDisplay = itemRebateApplied > 0
+        ? `${formatCurrency(amountPaid)} <small class="rebate-note">Rebate: ${formatCurrency(itemRebateApplied)}</small>`
+        : formatCurrency(amountPaid);
 
       return `
         <div class="payment-history-row">
           <span><span class="pill">#${idx + 1}</span></span>
           <span>${sanitize(formatLongDate(item.date) || String(item.date || "-"))}</span>
-          <span>${formatCurrency(amountPaid)}</span>
+          <span>${amountDisplay}</span>
           <span>P: ${formatCurrency(principalPaid)}</span>
           <span>I: ${formatCurrency(interestPaid)}</span>
         </div>
@@ -1724,6 +1828,7 @@ function openPaymentHistoryModal(record, history) {
       </div>
       ${rows}
     </div>
+    <div class="payment-history-total">Total Paid: <strong>${formatCurrency(totalPaid)}</strong><br />Total Rebate: <strong>${formatCurrency(totalRebate)}</strong></div>
   `;
 
   paymentHistoryModal.classList.add("show");
@@ -1738,6 +1843,7 @@ function closePaymentEntryModal() {
   paymentEntryModal.classList.remove("show");
   paymentEntryModal.setAttribute("aria-hidden", "true");
   paymentEntryRowIndex = -1;
+  paymentEntryMode = PAYMENT_MODE_STANDARD;
   if (paymentEntryInput) {
     paymentEntryInput.value = "";
   }
@@ -1762,23 +1868,24 @@ function updatePaymentEntryPreview() {
     return;
   }
 
-  const allocation = splitPaymentAmount(record, amount);
+  const allocation = getPaymentAllocation(record, amount, paymentEntryMode);
   paymentEntryPreview.textContent = `Applied: Interest ${formatCurrency(allocation.interestPaid)} | Principal ${formatCurrency(allocation.principalPaid)}`;
 }
 
-function openPaymentEntryModal(rowIndex, record) {
+function openPaymentEntryModal(rowIndex, record, mode = PAYMENT_MODE_STANDARD) {
   if (!paymentEntryModal || !paymentEntryInput) {
     return;
   }
 
   paymentEntryRowIndex = rowIndex;
+  paymentEntryMode = mode;
   if (paymentEntrySubtitle) {
     const statusNote = record.isWriteOff === true
       ? " | Write-Off Active"
       : isHatagHatagActive(record)
         ? " | Hatag-Hatag Active"
         : "";
-    paymentEntrySubtitle.textContent = `Borrower: ${record.name || ""}${statusNote}`;
+    paymentEntrySubtitle.textContent = `Borrower: ${record.name || ""}${statusNote} | Mode: ${getPaymentModeLabel(mode)}`;
   }
   paymentEntryInput.value = "";
   if (paymentEntryError) {
@@ -1793,7 +1900,7 @@ function openPaymentEntryModal(rowIndex, record) {
   }, 0);
 }
 
-function applyPaymentForRow(rowIndex, paidAmount) {
+function applyPaymentForRow(rowIndex, paidAmount, mode = PAYMENT_MODE_STANDARD) {
   if (!Number.isInteger(rowIndex) || rowIndex < 0) {
     showMessage("Unable to process payment.", "error");
     return false;
@@ -1811,30 +1918,39 @@ function applyPaymentForRow(rowIndex, paidAmount) {
     return false;
   }
 
-  const currentOutstanding = computeRemainingPayable(record);
-  if (currentOutstanding <= 0) {
+  const allocation = getPaymentAllocation(record, paidAmount, mode);
+  const isHatagMode = isHatagHatagActive(record);
+  if (mode === PAYMENT_MODE_PRINCIPAL_ONLY && isHatagMode) {
+    showMessage("Principal-only payment is not available in Hatag-Hatag mode.", "error");
+    return false;
+  }
+  if (allocation.outstandingBalance <= 0) {
     showMessage("There is no outstanding balance to pay.", "error");
     return false;
   }
-
-  const allocation = splitPaymentAmount(record, paidAmount);
-  const isHatagMode = isHatagHatagActive(record);
   const remainingInterestAfterPayment = Math.max(
     0,
     allocation.interestOutstanding - (isHatagMode ? paidAmount : allocation.interestPaid)
   );
   if (!isHatagMode && allocation.appliedAmount <= 0) {
-    showMessage("There is no outstanding balance to pay.", "error");
+    showMessage(mode === PAYMENT_MODE_PRINCIPAL_ONLY ? "There is no principal balance to pay." : "There is no outstanding balance to pay.", "error");
     return false;
   }
 
-  if (!isHatagMode && paidAmount > currentOutstanding) {
+  if (!isHatagMode && mode === PAYMENT_MODE_PRINCIPAL_ONLY && paidAmount > allocation.principalOutstanding) {
+    showMessage("Payment cannot exceed the principal balance.", "error");
+    return false;
+  }
+
+  if (!isHatagMode && mode !== PAYMENT_MODE_PRINCIPAL_ONLY && paidAmount > allocation.outstandingBalance) {
     showMessage("Payment cannot exceed the outstanding balance.", "error");
     return false;
   }
 
   const principalPaid = isHatagMode ? 0 : allocation.principalPaid;
   const interestPaid = isHatagMode ? paidAmount : allocation.interestPaid;
+  const interestReduced = isHatagMode ? 0 : Math.max(0, Number(allocation.interestReduced || 0));
+  const rebateApplied = isHatagMode ? 0 : getOutstandingBreakdown(record).rebateAmount;
 
   record.totalPaidAmount = getTotalPaidAmount(record) + (isHatagMode ? 0 : paidAmount);
   const history = getPaymentHistory(record);
@@ -1843,6 +1959,8 @@ function applyPaymentForRow(rowIndex, paidAmount) {
     amount: paidAmount,
     principalPaid,
     interestPaid,
+    interestReduced,
+    rebateApplied,
   });
   record.paymentHistory = history;
 
@@ -1859,7 +1977,7 @@ function applyPaymentForRow(rowIndex, paidAmount) {
 
   setRecords(records);
   renderRecords();
-  showMessage("Payment applied successfully.", "success");
+  showMessage(mode === PAYMENT_MODE_PRINCIPAL_ONLY ? "Principal-only payment applied successfully." : "Payment applied successfully.", "success");
   return true;
 }
 
@@ -1876,10 +1994,12 @@ async function exportVisibleRecordsToWord() {
   const safeOfficerSlug = officerName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "unknown";
 
   const headerRow = `
-    <tr>
-      <th>Borrower</th>
-      <th>Loan Amount</th>
-      <th>Date Granted</th>
+          <td class="outstanding-balance-cell">
+            <span class="outstanding-balance-value">${formatCurrency(outstandingBalance)}</span>
+            <small class="mini-note">Interest: ${formatCurrency(paymentBreakdown.interestOutstanding)}</small>
+            ${paymentBreakdown.rebateAmount > 0 ? `<small class="mini-note rebate-note">Rebate: ${formatCurrency(paymentBreakdown.rebateAmount)}</small>` : ""}
+            ${settledActive ? "" : `<div class="outstanding-btn-row"><button type="button" class="btn-secondary rebate-display-btn" data-index="${index}">Rebate</button><button type="button" class="pay-principal-only-btn" data-index="${index}" ${paymentBreakdown.principalOutstanding <= 0 || hatagHatagActive ? "disabled" : ""}>Pay Principal Only</button></div>`}
+            ${settledActive ? "" : `<div class="paid-controls rebate-editor ${openRebateEditorRowIndex === index ? "" : "rebate-editor-hidden"}" data-index="${index}"><input type="text" class="rebate-input" data-index="${index}" value="${normalizeAmountInput(formatPlainAmount(getRebateAmount(record)))}" inputmode="decimal" autocomplete="off" /><button type="button" class="btn-secondary save-rebate-btn" data-index="${index}">Save</button></div>`}
       <th>Due Date</th>
       <th>Outstanding Balance</th>
       <th>Amount Collectible</th>
@@ -1892,7 +2012,7 @@ async function exportVisibleRecordsToWord() {
   const bodyRows = rows
     .map(({ record }) => {
       const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
-      const outstandingBalance = computeRemainingPayable(record);
+      const outstandingBalance = getOutstandingBreakdown(record).outstandingBalance;
       const collectibleAmount = computeCollectibleAmount(record);
       return `
         <tr>
@@ -2066,7 +2186,7 @@ async function exportToExcel() {
       // Extract numeric values without formatting for proper CSV handling
       const amount = Number(normalizedRecord.amount || 0);
       const interest = Number(normalizedRecord.interestRate || 0);
-      const outstanding = Math.max(0, computeRemainingPayable(record));
+      const outstanding = getOutstandingBreakdown(record).outstandingBalance;
       const rawArrears = Number(normalizedRecord.manualArrearsAmount ?? 0);
       const arrears = Number.isFinite(rawArrears) && rawArrears > 0 ? rawArrears : 0;
       const rawOtherArrears = Number(normalizedRecord.manualOtherArrearsAmount ?? 0);
@@ -2127,7 +2247,7 @@ function escapeCSV(value) {
 async function exportStatementOfAccount(record) {
   const logoDataUrl = await getImageDataUrl("images/mgi_logo.png");
   const dueDate = record.dueDate || computeDueDate(record.dateGranted, record.payableWithin);
-  const outstandingBalance = computeRemainingPayable(record);
+  const outstandingBalance = getOutstandingBreakdown(record).outstandingBalance;
   const totalPaidAmount = getTotalPaidAmount(record);
   const totalPayable = outstandingBalance + totalPaidAmount;
   const paymentHistory = getPaymentHistory(record);
@@ -2137,12 +2257,14 @@ async function exportStatementOfAccount(record) {
     ? [...paymentHistory]
         .map((item) => {
           const amountPaid = Number(item.amount || 0);
+          const soaRebateApplied = Math.max(0, Number(item.rebateApplied || 0));
           const balanceAfterPayment = runningBalanceAfterPayment;
           const balanceBeforePayment = Math.max(0, balanceAfterPayment + amountPaid);
           runningBalanceAfterPayment = balanceBeforePayment;
           return {
             date: item.date,
             amountPaid,
+            soaRebateApplied,
             balanceBeforePayment,
             balanceAfterPayment,
           };
@@ -2153,7 +2275,7 @@ async function exportStatementOfAccount(record) {
             <tr>
               <td>${sanitize(formatLongDate(item.date))}</td>
               <td>${formatCurrency(item.balanceBeforePayment)}</td>
-              <td>${formatCurrency(item.amountPaid)}</td>
+              <td>${formatCurrency(item.amountPaid)}${item.soaRebateApplied > 0 ? ` <small>Rebate: ${formatCurrency(item.soaRebateApplied)}</small>` : ""}</td>
               <td>${formatCurrency(item.balanceAfterPayment)}</td>
             </tr>
           `
@@ -2408,6 +2530,27 @@ paymentEntryInput?.addEventListener("input", () => {
   updatePaymentEntryPreview();
 });
 
+body?.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (target.classList.contains("remarks-input")) {
+    target.value = toUpperInputValue(target.value);
+    return;
+  }
+
+  if (
+    target.classList.contains("collectible-edit-input") ||
+    target.classList.contains("rebate-input") ||
+    target.classList.contains("arrears-input") ||
+    target.classList.contains("other-arrears-input")
+  ) {
+    target.value = normalizeAmountInput(target.value);
+  }
+});
+
 useTodayBtn?.addEventListener("click", () => {
   if (testDateInput) {
     testDateInput.value = toIsoDate(new Date());
@@ -2457,7 +2600,7 @@ paymentEntryConfirmBtn?.addEventListener("click", () => {
     paymentEntryError.textContent = "";
   }
 
-  const success = applyPaymentForRow(rowIndex, amount);
+  const success = applyPaymentForRow(rowIndex, amount, paymentEntryMode);
   if (success) {
     closePaymentEntryModal();
   }
@@ -2576,6 +2719,11 @@ body?.addEventListener("change", (event) => {
 });
 
 body?.addEventListener("click", async (event) => {
+  const saveRebateFromEditor = event.target.closest(".save-rebate-btn");
+  if (event.target.closest(".rebate-editor") && !saveRebateFromEditor) {
+    return;
+  }
+
   const editNameBtn = event.target.closest(".edit-name-btn");
   if (editNameBtn) {
     const rowIndex = Number(editNameBtn.dataset.index);
@@ -2677,6 +2825,69 @@ body?.addEventListener("click", async (event) => {
     }
 
     toggleCollectibleEditor(rowIndex);
+    return;
+  }
+
+  const rebateDisplayBtn = event.target.closest(".rebate-display-btn");
+  if (rebateDisplayBtn) {
+    const rowIndex = Number(rebateDisplayBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to edit rebate.", "error");
+      return;
+    }
+
+    toggleRebateEditor(rowIndex);
+    return;
+  }
+
+  const saveRebateBtn = event.target.closest(".save-rebate-btn");
+  if (saveRebateBtn) {
+    const rowIndex = Number(saveRebateBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to save rebate.", "error");
+      return;
+    }
+
+    const rebateInputEl = body?.querySelector(`.rebate-input[data-index="${rowIndex}"]`);
+    const updatedRebate = parseAmountInput(rebateInputEl instanceof HTMLInputElement ? rebateInputEl.value : "0");
+    if (!Number.isFinite(updatedRebate) || updatedRebate < 0) {
+      showMessage("Rebate amount cannot be negative.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    if (!records[rowIndex]) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    const maxRebate = Math.max(0, computeRemainingPayable(records[rowIndex]));
+    if (updatedRebate > maxRebate) {
+      showMessage("Rebate cannot exceed the raw outstanding balance.", "error");
+      return;
+    }
+
+    const previousRebate = getRebateAmount(records[rowIndex]);
+    records[rowIndex].manualRebateAmount = updatedRebate;
+    const rebateChanged = Math.abs(updatedRebate - previousRebate) > 0.0001;
+    if (rebateChanged && updatedRebate > 0) {
+      const rebateApplied = Math.max(0, getOutstandingBreakdown(records[rowIndex]).rebateAmount);
+      const history = getPaymentHistory(records[rowIndex]);
+      history.unshift({
+        date: toIsoDate(getReferenceDate()),
+        amount: updatedRebate,
+        principalPaid: 0,
+        interestPaid: 0,
+        interestReduced: 0,
+        rebateApplied,
+        isRebateOnly: true,
+      });
+      records[rowIndex].paymentHistory = history;
+    }
+    setRecords(records);
+    openRebateEditorRowIndex = -1;
+    renderRecords();
+    showMessage("Rebate updated.", "success");
     return;
   }
 
@@ -2898,12 +3109,41 @@ body?.addEventListener("click", async (event) => {
       return;
     }
 
-    if (computeRemainingPayable(record) <= 0) {
+    if (getOutstandingBreakdown(record).outstandingBalance <= 0) {
       showMessage("There is no outstanding balance to pay.", "error");
       return;
     }
 
-    openPaymentEntryModal(rowIndex, record);
+    openPaymentEntryModal(rowIndex, record, PAYMENT_MODE_STANDARD);
+    return;
+  }
+
+  const payPrincipalOnlyBtn = event.target.closest(".pay-principal-only-btn");
+  if (payPrincipalOnlyBtn) {
+    const rowIndex = Number(payPrincipalOnlyBtn.dataset.index);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      showMessage("Unable to process principal-only payment.", "error");
+      return;
+    }
+
+    const records = getRecords();
+    const record = records[rowIndex];
+    if (!record) {
+      showMessage("Record not found.", "error");
+      return;
+    }
+
+    const paymentBreakdown = getOutstandingBreakdown(record);
+    if (isHatagHatagActive(record)) {
+      showMessage("Principal-only payment is not available in Hatag-Hatag mode.", "error");
+      return;
+    }
+    if (paymentBreakdown.principalOutstanding <= 0) {
+      showMessage("There is no principal balance to pay.", "error");
+      return;
+    }
+
+    openPaymentEntryModal(rowIndex, record, PAYMENT_MODE_PRINCIPAL_ONLY);
     return;
   }
 
