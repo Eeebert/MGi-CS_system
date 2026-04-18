@@ -2099,33 +2099,26 @@ async function exportVisibleRecordsToWord() {
   const headerRow = `
     <tr>
       <th>Name of the Borrower</th>
-      <th>Amount</th>
-      <th>Date Granted</th>
-      <th>Due Date</th>
       <th>Outstanding Balance</th>
       <th>Amount Collectible</th>
+      <th>Interest</th>
       <th>Amount Collected</th>
-      <th>Amount Remaining</th>
       <th>Remarks</th>
     </tr>
   `;
 
   const bodyRows = rows
     .map(({ record }) => {
-      const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
-      const outstandingBalance = getOutstandingBreakdown(record).outstandingBalance;
+      const { outstandingBalance, interestOutstanding } = getOutstandingBreakdown(record);
       const collectibleAmount = computeCollectibleAmount(record);
       return `
         <tr>
           <td>
             <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
           </td>
-          <td>${formatCurrency(record.amount)}</td>
-          <td>${sanitize(formatLongDate(record.dateGranted))}</td>
-          <td>${sanitize(formatLongDate(dueDate))}</td>
           <td>${formatCurrency(outstandingBalance)}</td>
           <td>${formatCurrency(collectibleAmount)}</td>
-          <td>&nbsp;</td>
+          <td>${formatCurrency(interestOutstanding)}</td>
           <td>&nbsp;</td>
           <td>${sanitize(String(record.remarks || ""))}</td>
         </tr>
