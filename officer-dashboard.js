@@ -1327,7 +1327,16 @@ function computeBaseCollectibleAmount(record) {
 
 function computeCollectibleAmount(record) {
   const baseCollectible = computeBaseCollectibleAmount(record);
-  return baseCollectible + computeArrearsAmount(record) + computeOtherArrearsAmount(record);
+  const arrearsAmount = computeArrearsAmount(record);
+  const otherArrearsAmount = computeOtherArrearsAmount(record);
+
+  if (isMonthly60FixedLoan(record?.payableWithin)) {
+    const principalArrears = record?.arrearsType === "Principal" ? arrearsAmount : 0;
+    const principalOtherArrears = record?.otherArrearsType === "Principal" ? otherArrearsAmount : 0;
+    return baseCollectible + principalArrears + principalOtherArrears;
+  }
+
+  return baseCollectible + arrearsAmount + otherArrearsAmount;
 }
 
 function computeArrearsAmount(record) {
