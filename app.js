@@ -735,13 +735,13 @@ let syncDebugState = {
 };
 
 function hasStoredLogin(key) {
-  return sessionStorage.getItem(key) === "1" || localStorage.getItem(key) === "1";
+  return sessionStorage.getItem(key) === "1";
 }
 
 function setStoredLogin(key, enabled) {
   if (enabled) {
     sessionStorage.setItem(key, "1");
-    localStorage.setItem(key, "1");
+    localStorage.removeItem(key);
     return;
   }
 
@@ -755,13 +755,9 @@ function clearAllStoredLogins() {
 }
 
 function restoreStoredLogins() {
-  if (localStorage.getItem(LOGIN_SESSION_KEY) === "1") {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
-  }
-
-  if (localStorage.getItem(PORTFOLIO_SESSION_KEY) === "1") {
-    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
-  }
+  // Session-only login: clear any stale persisted login flags.
+  localStorage.removeItem(LOGIN_SESSION_KEY);
+  localStorage.removeItem(PORTFOLIO_SESSION_KEY);
 }
 
 function getDashboardViewFromLocation() {
@@ -4323,7 +4319,7 @@ function openPaymentEntryModal(rowIndex, record, mode = PAYMENT_MODE_STANDARD) {
 function renderRecords() {
   const records = getRecords();
   const viewRecords = getRecordsForCurrentDashboardView(records);
-  const rows = getVisibleRecords(records);
+  const rows = getVisibleRecords(viewRecords);
   const activeFilters = getActiveFilterSnapshot();
   updateReleasedSummaryStats();
   console.debug("[render][main] Rendering records", {
@@ -6297,18 +6293,8 @@ renderRecords();
 initializeDatePickers();
 
 window.addEventListener("load", async () => {
-  // Restore login state from localStorage FIRST thing before any other checks
+  // Clear stale persisted login flags and keep login state session-only.
   restoreStoredLogins();
-  
-  // Double-check: explicitly restore if not in sessionStorage but in localStorage
-  const hasStoredMainLogin = localStorage.getItem(LOGIN_SESSION_KEY) === "1";
-  const hasStoredPortfolioLogin = localStorage.getItem(PORTFOLIO_SESSION_KEY) === "1";
-  if (hasStoredMainLogin && sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
-  }
-  if (hasStoredPortfolioLogin && sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
-    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
-  }
 
   ensureSyncStatusElement();
   
