@@ -672,6 +672,8 @@ function renderOfficerSidebarLinks() {
 }
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
+const NAV_LOGIN_BRIDGE_KEY = "mgi_nav_login_bridge";
+const NAV_LOGIN_BRIDGE_TTL_MS = 2 * 60 * 1000;
 const THEME_KEY = "mgi_dashboard_theme";
 const DEVICE_LOCAL_KEYS = new Set([THEME_KEY]);
 const AUTH_SETTINGS_KEY = "mgi_auth_settings";
@@ -752,12 +754,35 @@ function setStoredLogin(key, enabled) {
 function clearAllStoredLogins() {
   setStoredLogin(LOGIN_SESSION_KEY, false);
   setStoredLogin(PORTFOLIO_SESSION_KEY, false);
+  localStorage.removeItem(NAV_LOGIN_BRIDGE_KEY);
 }
 
 function restoreStoredLogins() {
   // Session-only login: clear any stale persisted login flags.
   localStorage.removeItem(LOGIN_SESSION_KEY);
   localStorage.removeItem(PORTFOLIO_SESSION_KEY);
+}
+
+function writeNavigationLoginBridge() {
+  try {
+    localStorage.setItem(NAV_LOGIN_BRIDGE_KEY, String(Date.now()));
+  } catch {
+    // Ignore localStorage availability errors.
+  }
+}
+
+function consumeNavigationLoginBridge() {
+  try {
+    const raw = localStorage.getItem(NAV_LOGIN_BRIDGE_KEY);
+    localStorage.removeItem(NAV_LOGIN_BRIDGE_KEY);
+    const timestamp = Number(raw || 0);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      return false;
+    }
+    return Date.now() - timestamp <= NAV_LOGIN_BRIDGE_TTL_MS;
+  } catch {
+    return false;
+  }
 }
 
 function getDashboardViewFromLocation() {
@@ -6198,6 +6223,15 @@ drawerLogoutBtn?.addEventListener("click", () => {
   openLogoutConfirm();
 });
 
+const internalNavLinks = Array.from(document.querySelectorAll(".drawer-link, .officer-link"));
+internalNavLinks.forEach((link) => {
+  link.addEventListener("click", () => {
+    if (hasStoredLogin(LOGIN_SESSION_KEY)) {
+      writeNavigationLoginBridge();
+    }
+  });
+});
+
 themeOptions.forEach((option) => {
   option.addEventListener("change", () => {
     if (option.checked) {
@@ -6324,6 +6358,11 @@ initializeDatePickers();
 window.addEventListener("load", async () => {
   // Clear stale persisted login flags and keep login state session-only.
   restoreStoredLogins();
+
+  // If this navigation came from an authenticated in-app link, restore session login.
+  if (!hasStoredLogin(LOGIN_SESSION_KEY) && consumeNavigationLoginBridge()) {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+  }
 
   ensureSyncStatusElement();
   
