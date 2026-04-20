@@ -719,6 +719,8 @@ let diagnosticsMetaElement = null;
 let diagnosticsDebugElement = null;
 let latestSyncIssue = "";
 let recordsCache = [];
+let settledOfficerRecordsCache = [];
+let settledOfficerRecordsSource = "local";
 const selectedSettledRecordFingerprints = new Set();
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
@@ -756,7 +758,10 @@ function getSettledDashboardRecords(records) {
 function getRecordsForCurrentDashboardView(records) {
   if (isSettledDashboardView) {
     const mainSettled = getSettledDashboardRecords(records);
-    const officerSettled = getSettledDashboardRecords(getLocalOfficerRecords());
+    const officerSourceRecords = settledOfficerRecordsSource === "server"
+      ? settledOfficerRecordsCache
+      : getLocalOfficerRecords();
+    const officerSettled = getSettledDashboardRecords(officerSourceRecords);
     return dedupeRecords([...mainSettled, ...officerSettled]);
   }
 
@@ -798,6 +803,12 @@ function getOfficerStorageKey(officerName) {
 
 function getKnownOfficerNames() {
   const officerNames = new Set(DEFAULT_OFFICER_NAMES);
+  OFFICER_NAMES.forEach((name) => {
+    const normalized = normalizeOfficerName(name);
+    if (normalized) {
+      officerNames.add(normalized);
+    }
+  });
   try {
     for (let index = 0; index < localStorage.length; index += 1) {
       const key = String(localStorage.key(index) || "");
@@ -1036,6 +1047,36 @@ async function loadStateRecords(stateKey, includeCacheBuster = true) {
       records: [],
     };
   }
+}
+
+async function loadSettledOfficerRecordsFromServer() {
+  const stateKeys = Array.from(new Set(
+    getKnownOfficerNames().flatMap((officerName) => getOfficerStorageKeys(officerName))
+  ));
+
+  if (stateKeys.length === 0) {
+    settledOfficerRecordsCache = [];
+    settledOfficerRecordsSource = "server";
+    return;
+  }
+
+  const results = await Promise.all(stateKeys.map((stateKey) => loadStateRecords(stateKey)));
+  const successfulResults = results.filter((result) => result.ok);
+
+  if (successfulResults.length === 0) {
+    settledOfficerRecordsSource = "local";
+    settledOfficerRecordsCache = [];
+    return;
+  }
+
+  const merged = dedupeRecords(successfulResults.flatMap((result) => result.records));
+  const normalized = merged.map((record) => ({
+    ...record,
+    accountOfficer: normalizeOfficerName(String(record?.accountOfficer || "").trim()) || String(record?.accountOfficer || "").trim(),
+  }));
+
+  settledOfficerRecordsCache = dedupeRecords(normalized);
+  settledOfficerRecordsSource = "server";
 }
 
 function getAuthSettings() {
@@ -1438,6 +1479,11 @@ async function loadRecordsFromServer() {
       }
       recordsCache = serverRecords;
       mirrorRecordsToLocalStorage(recordsCache);
+
+      if (isSettledDashboardView) {
+        await loadSettledOfficerRecordsFromServer();
+      }
+
       console.info("[sync][main] Fetch success", { records: serverRecords.length });
       latestSyncIssue = "";
       setSyncStatus("ok", `updated (${serverRecords.length} records)`);
