@@ -10,6 +10,20 @@
       if (sessionStorage.getItem("mgi_portfolio_logged_in") === "1") {
         window.location.href = "portfolio.html";
       }
+      
+      // If dashboard2 user is already logged in (session only), hide login form immediately
+      // This prevents the login form from flashing when navigating between dashboard views
+      if (
+        sessionStorage.getItem("mgi_logged_in") === "1"
+      ) {
+        document.addEventListener("DOMContentLoaded", function() {
+          const loadingScreen = document.getElementById("loading-screen");
+          if (loadingScreen) {
+            loadingScreen.classList.add("hidden");
+          }
+          document.body.classList.remove("login-locked");
+        });
+      }
     </script>
     <link rel="stylesheet" href="styles.css" />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -435,7 +449,7 @@
     </aside>
 
     <script src="client-security.js"></script>
-    <script src="app.js?v=20260411j"></script>
+    <script src="app.js?v=20260420c"></script>
     <script src="pwa-init.js"></script>
   </body>
 </html>

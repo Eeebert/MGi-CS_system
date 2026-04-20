@@ -854,7 +854,8 @@ function getOfficerStorageKey(officerName) {
 
 function getKnownOfficerNames() {
   const officerNames = new Set(DEFAULT_OFFICER_NAMES);
-  OFFICER_NAMES.forEach((name) => {
+  const knownFromRuntime = Array.isArray(globalThis.OFFICER_NAMES) ? globalThis.OFFICER_NAMES : [];
+  knownFromRuntime.forEach((name) => {
     const normalized = normalizeOfficerName(name);
     if (normalized) {
       officerNames.add(normalized);
@@ -1513,6 +1514,9 @@ async function loadRecordsFromServer() {
         recordsCache = localRecords;
         mirrorRecordsToLocalStorage(recordsCache);
       }
+      if (isSettledDashboardView) {
+        await loadSettledOfficerRecordsFromServer();
+      }
       latestSyncIssue = "Cannot load latest records from server. Using local cached data.";
       setDiagnosticsPanel("warning", "Using local cached records.", latestSyncIssue);
       setSyncStatus("error", "local fallback");
@@ -1585,6 +1589,9 @@ async function loadRecordsFromServer() {
     if (localRecords.length > 0) {
       recordsCache = localRecords;
       mirrorRecordsToLocalStorage(recordsCache);
+    }
+    if (isSettledDashboardView) {
+      await loadSettledOfficerRecordsFromServer();
     }
     latestSyncIssue = "Network error while loading server data.";
     setDiagnosticsPanel("error", "Network problem while syncing.", latestSyncIssue);
@@ -6226,9 +6233,9 @@ drawerLogoutBtn?.addEventListener("click", () => {
 const internalNavLinks = Array.from(document.querySelectorAll(".drawer-link, .officer-link"));
 internalNavLinks.forEach((link) => {
   link.addEventListener("click", () => {
-    if (hasStoredLogin(LOGIN_SESSION_KEY)) {
-      writeNavigationLoginBridge();
-    }
+    // Always write a short-lived bridge token for in-app navigation so
+    // moving to settled/other dashboard views does not prompt for re-login.
+    writeNavigationLoginBridge();
   });
 });
 
