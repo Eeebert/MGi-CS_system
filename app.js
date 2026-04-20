@@ -1143,9 +1143,12 @@ async function loadSettledOfficerRecordsFromServer() {
 
   const results = await Promise.all(stateKeys.map((stateKey) => loadStateRecords(stateKey)));
   const successfulResults = results.filter((result) => result.ok);
+  const hasServerResponse = results.some((result) => result.status !== null);
 
   if (successfulResults.length === 0) {
-    settledOfficerRecordsSource = "local";
+    // If server responded (including 404/empty officer keys), use server truth
+    // to avoid pulling stale local officer records into settled view.
+    settledOfficerRecordsSource = hasServerResponse ? "server" : "local";
     settledOfficerRecordsCache = [];
     return;
   }
@@ -1427,13 +1430,7 @@ function setSyncDebug(partial) {
 }
 
 function getRecords() {
-  const baseRecords = Array.isArray(recordsCache) ? recordsCache : [];
-  if (!isSettledDashboardView) {
-    return baseRecords;
-  }
-
-  const officerSettledRecords = getSettledDashboardRecords(getLocalOfficerRecords());
-  return dedupeRecords([...baseRecords, ...officerSettledRecords]);
+  return Array.isArray(recordsCache) ? recordsCache : [];
 }
 
 function mirrorRecordsToLocalStorage(records) {
