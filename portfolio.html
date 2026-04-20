@@ -85,11 +85,10 @@
         <p id="portfolio-meta" class="portfolio-meta" style="margin-top: 6px; margin-bottom: 0; font-size: 0.7rem;">0 released loans</p>
       </section>
 
-      <section class="panel portfolio-grid portfolio-summary-grid" style="padding: 8px 10px; gap: 8px;">
+      <section class="panel portfolio-grid portfolio-summary-grid" style="padding: 8px 10px; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr));">
         <article class="portfolio-stat-card" style="padding: 8px;">
           <span class="portfolio-stat-label" style="font-size: 0.72rem;">Released Loans</span>
           <strong id="portfolio-count" class="portfolio-stat-value" style="font-size: 1rem;">0</strong>
-          <p style="margin: 4px 0 0 0; font-size: 0.68rem; color: #b42318; font-weight: 700;">Past Due: <span id="portfolio-past-due-count">0</span></p>
         </article>
         <article class="portfolio-stat-card" style="padding: 8px;">
           <span class="portfolio-stat-label" style="font-size: 0.72rem;">Total Release</span>
@@ -99,6 +98,11 @@
           </div>
           <button id="show-released-data" class="btn-secondary" type="button" style="margin-top: 6px; width: 100%;">Show Data</button>
         </article>
+        <article class="portfolio-stat-card" style="padding: 8px;">
+          <span class="portfolio-stat-label" style="font-size: 0.72rem;">Past Due</span>
+          <strong id="portfolio-past-due-count" class="portfolio-stat-value" style="font-size: 1rem; color: #b42318;">0</strong>
+          <button id="portfolio-past-due-btn" type="button" class="btn-secondary" style="margin-top: 6px; width: 100%; font-size: 0.72rem; color: #b42318; font-weight: 700;">Show Past Due Data</button>
+        </article>
       </section>
 
       <section class="panel portfolio-types-panel" style="padding: 8px 10px;">
@@ -106,43 +110,55 @@
           <h2 style="font-size: 0.82rem; margin: 0;">Number of Types of Loans</h2>
         </div>
           <div id="portfolio-types-grid" class="portfolio-types-grid" style="grid-template-columns: repeat(4, 1fr); gap: 7px;">
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="monthlyOpen" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Monthly - Open</span>
               <strong id="type-monthly-open" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-monthly-open-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="biMonthly" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Bi - Monthly</span>
               <strong id="type-bi-monthly" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-bi-monthly-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="cashAdvance" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Cash Advance</span>
               <strong id="type-cash-advance" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-cash-advance-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="monthly60" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Monthly (60 Days) - Fixed</span>
               <strong id="type-monthly-60" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-monthly-60-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="monthly14Weeks" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Monthly (14 weeks)</span>
               <strong id="type-monthly-14-weeks" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-monthly-14-weeks-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="emergency" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Emergency Loan - Fixed</span>
               <strong id="type-emergency" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-emergency-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="notListed" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Not Listed</span>
               <strong id="type-not-listed" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-not-listed-balance" style="font-weight: bold;">₱0.00</span></p>
             </article>
 
-            <article class="portfolio-type-card" style="padding: 7px;">
+            <article class="portfolio-type-card" data-type-key="writeOff" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
+              <span class="portfolio-type-label" style="font-size: 0.72rem;">Write-Off</span>
+              <strong id="type-write-off" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
+              <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-write-off-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+
+            <article class="portfolio-type-card" data-type-key="hatagHatag" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
+              <span class="portfolio-type-label" style="font-size: 0.72rem;">Hatag-Hatag</span>
+              <strong id="type-hatag-hatag" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
+              <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-hatag-hatag-balance" style="font-weight: bold;">₱0.00</span></p>
+            </article>
+
+            <article class="portfolio-type-card" data-type-key="settled" role="button" tabindex="0" style="padding: 7px; cursor: pointer;">
               <span class="portfolio-type-label" style="font-size: 0.72rem;">Settled</span>
               <strong id="type-settled" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
               <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">Outstanding: <span id="type-settled-balance" style="font-weight: bold;">₱0.00</span></p>
@@ -154,37 +170,7 @@
         <div class="table-head" style="margin-bottom: 8px;">
           <h2 style="font-size: 0.82rem; margin: 0;">Account Officers - Outstanding Balance</h2>
         </div>
-        <div class="portfolio-types-grid" style="grid-template-columns: repeat(6, 1fr); gap: 7px;">
-          <article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">JunJun</span>
-            <strong id="officer-count-junjun" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>
-          <article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">Aga</span>
-            <strong id="officer-count-aga" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>
-          <article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">Jomar</span>
-            <strong id="officer-count-jomar" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>
-          <article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">James</span>
-            <strong id="officer-count-james" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>
-          <article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">Jambi</span>
-            <strong id="officer-count-jambi" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>
-          <article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">Maria Joy</span>
-            <strong id="officer-count-mariajoy" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>
+        <div id="portfolio-officers-grid" class="portfolio-types-grid" style="grid-template-columns: repeat(6, 1fr); gap: 7px;">
         </div>
       </section>
 
@@ -233,6 +219,6 @@
 
     <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>
-    <script src="portfolio.js?v=20260413a"></script>
+    <script src="portfolio.js?v=20260420j"></script>
   </body>
 </html>

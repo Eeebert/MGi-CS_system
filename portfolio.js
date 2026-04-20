@@ -9,12 +9,16 @@ const portfolioTotalOutstanding = document.getElementById("portfolio-total-outst
 const portfolioMeta = document.getElementById("portfolio-meta");
 const portfolioCount = document.getElementById("portfolio-count");
 const portfolioPastDueCount = document.getElementById("portfolio-past-due-count");
+const portfolioPastDueBtn = document.getElementById("portfolio-past-due-btn");
 const portfolioAverage = document.getElementById("portfolio-average");
 const releasedInterestBreakdown = document.getElementById("released-interest-breakdown");
 const showReleasedDataBtn = document.getElementById("show-released-data");
 const portfolioReleaseDataModal = document.getElementById("portfolio-release-data-modal");
 const portfolioReleaseDataCloseBtn = document.getElementById("portfolio-release-data-close");
 const portfolioReleaseDataContent = document.getElementById("portfolio-release-data-content");
+const portfolioReleaseDataTitle = document.getElementById("portfolio-release-data-title");
+const portfolioReleaseDataSubtitle = portfolioReleaseDataModal?.querySelector(".payment-history-head p") || null;
+const portfolioTypesGrid = document.getElementById("portfolio-types-grid");
 const portfolioDateFilterInput = document.getElementById("portfolio-date-filter");
 const portfolioMonthFilterInput = document.getElementById("portfolio-month-filter");
 const portfolioDateClearBtn = document.getElementById("portfolio-date-clear");
@@ -25,6 +29,8 @@ const typeMonthly60 = document.getElementById("type-monthly-60");
 const typeMonthly14Weeks = document.getElementById("type-monthly-14-weeks");
 const typeEmergency = document.getElementById("type-emergency");
 const typeNotListed = document.getElementById("type-not-listed");
+const typeWriteOff = document.getElementById("type-write-off");
+const typeHatagHatag = document.getElementById("type-hatag-hatag");
 const typeMonthlyOpenBalance = document.getElementById("type-monthly-open-balance");
 const typeBiMonthlyBalance = document.getElementById("type-bi-monthly-balance");
 const typeCashAdvanceBalance = document.getElementById("type-cash-advance-balance");
@@ -32,14 +38,10 @@ const typeMonthly60Balance = document.getElementById("type-monthly-60-balance");
 const typeMonthly14WeeksBalance = document.getElementById("type-monthly-14-weeks-balance");
 const typeEmergencyBalance = document.getElementById("type-emergency-balance");
 const typeNotListedBalance = document.getElementById("type-not-listed-balance");
+const typeWriteOffBalance = document.getElementById("type-write-off-balance");
+const typeHatagHatagBalance = document.getElementById("type-hatag-hatag-balance");
 const backDashboardBtn = document.getElementById("back-dashboard");
 const typeAccountOfficer = document.getElementById("type-account-officer");
-const officerCountJunJun = document.getElementById("officer-count-junjun");
-const officerCountAga = document.getElementById("officer-count-aga");
-const officerCountJomar = document.getElementById("officer-count-jomar");
-const officerCountJames = document.getElementById("officer-count-james");
-const officerCountJambi = document.getElementById("officer-count-jambi");
-const officerCountMariaJoy = document.getElementById("officer-count-mariajoy");
 const typeSettled = document.getElementById("type-settled");
 const typeAccountOfficerBalance = document.getElementById("type-account-officer-balance");
 const typeSettledBalance = document.getElementById("type-settled-balance");
@@ -47,28 +49,80 @@ const portfolioLogoutBtn = document.getElementById("portfolio-logout");
 const dailyPrincipalCollected = document.getElementById("daily-principal-collected");
 const dailyInterestCollected = document.getElementById("daily-interest-collected");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
-const OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
+let OFFICER_NAMES = (() => {
+  try {
+    const raw = localStorage.getItem("mgi_officer_names");
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
+  } catch { return ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"]; }
+})();
 const OFFICER_STORAGE_KEY_PREFIX = "mgi_officer_records_";
 let recordsCache = [];
 let didLoadServerRecords = false;
+let typeDetailBuckets = {
+  monthlyOpen: [],
+  biMonthly: [],
+  cashAdvance: [],
+  monthly60: [],
+  monthly14Weeks: [],
+  emergency: [],
+  notListed: [],
+  writeOff: [],
+  hatagHatag: [],
+  settled: [],
+  pastDue: [],
+};
 
-const OFFICER_SLUG_TO_NAME = OFFICER_NAMES.reduce((acc, name) => {
+let OFFICER_SLUG_TO_NAME = OFFICER_NAMES.reduce((acc, name) => {
   acc[toOfficerSlug(name)] = name;
   return acc;
 }, {});
 
-const officerSummaryCards = [
-  { valueEl: officerCountJunJun, fallbackName: "JunJun" },
-  { valueEl: officerCountAga, fallbackName: "Aga" },
-  { valueEl: officerCountJomar, fallbackName: "Jomar" },
-  { valueEl: officerCountJames, fallbackName: "James" },
-  { valueEl: officerCountJambi, fallbackName: "Jambi" },
-  { valueEl: officerCountMariaJoy, fallbackName: "Maria Joy" },
-].map((item) => ({
-  ...item,
-  labelEl: item.valueEl?.closest("article")?.querySelector(".portfolio-type-label") || null,
-  metaEl: item.valueEl?.closest("article")?.querySelector("p") || null,
-}));
+async function refreshOfficerNamesFromServer() {
+  let didUpdateOfficerNames = false;
+  try {
+    const res = await fetchStateApi("mgi_officer_names", {}, true);
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = Array.isArray(data?.payload) && data.payload.length > 0 ? data.payload : null;
+    if (list) {
+      OFFICER_NAMES = list;
+      OFFICER_SLUG_TO_NAME = list.reduce((acc, name) => { acc[toOfficerSlug(name)] = name; return acc; }, {});
+      localStorage.setItem("mgi_officer_names", JSON.stringify(list));
+      didUpdateOfficerNames = true;
+    }
+  } catch { /* ignore */ }
+  if (didUpdateOfficerNames) {
+    buildOfficerCards();
+    if (didLoadServerRecords) {
+      renderPortfolio();
+    }
+  }
+}
+
+let officerSummaryCards = [];
+
+function buildOfficerCards() {
+  const grid = document.getElementById("portfolio-officers-grid");
+  if (!grid) return;
+  grid.innerHTML = OFFICER_NAMES.map((name) => {
+    const slug = toOfficerSlug(name);
+    return `<article class="portfolio-type-card" style="padding: 7px;">
+            <span class="portfolio-type-label" style="font-size: 0.72rem;">${name}</span>
+            <strong id="officer-count-${slug}" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
+            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
+          </article>`;
+  }).join("\n          ");
+  officerSummaryCards = OFFICER_NAMES.map((name) => {
+    const valueEl = document.getElementById(`officer-count-${toOfficerSlug(name)}`);
+    return {
+      fallbackName: name,
+      valueEl,
+      labelEl: valueEl?.closest("article")?.querySelector(".portfolio-type-label") || null,
+      metaEl: valueEl?.closest("article")?.querySelector("p") || null,
+    };
+  });
+}
 
 function toOfficerSlug(name) {
   return String(name || "")
@@ -143,16 +197,44 @@ function buildRecordFingerprint(record) {
 }
 
 function dedupeRecords(records) {
-  const seen = new Set();
   const merged = [];
+  const indexByFingerprint = new Map();
 
-  for (const record of records) {
+  for (const rawRecord of records) {
+    const record = rawRecord && typeof rawRecord === "object" ? { ...rawRecord } : rawRecord;
     const fingerprint = buildRecordFingerprint(record);
-    if (seen.has(fingerprint)) {
+    const existingIndex = indexByFingerprint.get(fingerprint);
+
+    if (typeof existingIndex === "undefined") {
+      indexByFingerprint.set(fingerprint, merged.length);
+      merged.push(record);
       continue;
     }
-    seen.add(fingerprint);
-    merged.push(record);
+
+    const existing = merged[existingIndex] || {};
+    const nextRecord = {
+      ...existing,
+      ...record,
+      // Keep status flags even when data is split between canonical and legacy keys.
+      isWriteOff: isWriteOffActive(existing) || isWriteOffActive(record),
+      isHatagHatag: isHatagHatagActive(existing) || isHatagHatagActive(record),
+      writeOffDate: String(existing?.writeOffDate || "").trim() || String(record?.writeOffDate || "").trim(),
+      hatagHatagDate: String(existing?.hatagHatagDate || "").trim() || String(record?.hatagHatagDate || "").trim(),
+    };
+
+    const existingPaid = Number(existing?.totalPaidAmount ?? existing?.paidAmount ?? 0);
+    const incomingPaid = Number(record?.totalPaidAmount ?? record?.paidAmount ?? 0);
+    if (incomingPaid > existingPaid) {
+      nextRecord.totalPaidAmount = incomingPaid;
+    }
+
+    const existingHistory = Array.isArray(existing?.paymentHistory) ? existing.paymentHistory : [];
+    const incomingHistory = Array.isArray(record?.paymentHistory) ? record.paymentHistory : [];
+    if (incomingHistory.length > existingHistory.length) {
+      nextRecord.paymentHistory = incomingHistory;
+    }
+
+    merged[existingIndex] = nextRecord;
   }
 
   return merged;
@@ -300,9 +382,13 @@ async function loadRecordsFromServer() {
 
     const allRecords = dedupeRecords([...mergedOfficerRecords, ...cleanGlobalRecords]);
 
-    // Use server payload as source of truth (even when empty) so all devices
-    // reflect the same state instead of diverging to local-only fallback data.
-    recordsCache = allRecords;
+    // Merge local cache so recent unsynced status flags (Write-Off/Hatag-Hatag)
+    // do not instantly disappear while background sync catches up.
+    const localOfficerRecords = getLocalOfficerRecords();
+    const localGlobalRecords = readCachedStateRecords(STORAGE_KEY).filter(
+      (r) => !String(r?.accountOfficer || "").trim()
+    );
+    recordsCache = dedupeRecords([...allRecords, ...localOfficerRecords, ...localGlobalRecords]);
     didLoadServerRecords = true;
     return;
   } catch {
@@ -370,6 +456,38 @@ function formatMonthLabel(monthKey) {
   ];
 
   return `${monthNames[month - 1]} ${year}`;
+}
+
+function isWriteOffActive(record) {
+  if (!record || typeof record !== "object") {
+    return false;
+  }
+
+  const rawFlag = record.isWriteOff;
+  if (rawFlag === true) {
+    return true;
+  }
+  if (typeof rawFlag === "string" && rawFlag.trim().toLowerCase() === "true") {
+    return true;
+  }
+
+  return String(record.writeOffDate || "").trim() !== "";
+}
+
+function isHatagHatagActive(record) {
+  if (!record || typeof record !== "object") {
+    return false;
+  }
+
+  const rawFlag = record.isHatagHatag;
+  if (rawFlag === true) {
+    return true;
+  }
+  if (typeof rawFlag === "string" && rawFlag.trim().toLowerCase() === "true") {
+    return true;
+  }
+
+  return String(record.hatagHatagDate || "").trim() !== "";
 }
 
 function getTypeLabel(payableWithin) {
@@ -646,7 +764,20 @@ function getTypeKey(payableWithin) {
 function renderTypeBreakdown(records) {
   const sourceRecords = Array.isArray(records) ? records : [];
   const openRecords = sourceRecords.filter((record) => record?.isSettled !== true && computeOutstandingBalance(record) > 0);
+  const activeRecords = sourceRecords.filter((record) => record?.isSettled !== true);
   const settledRecordsForDashboardParity = getSettledDashboardParityRecords(sourceRecords);
+  typeDetailBuckets = {
+    monthlyOpen: [],
+    biMonthly: [],
+    cashAdvance: [],
+    monthly60: [],
+    monthly14Weeks: [],
+    emergency: [],
+    notListed: [],
+    writeOff: [],
+    hatagHatag: [],
+    settled: settledRecordsForDashboardParity.slice(),
+  };
 
   const counts = {
     monthlyOpen: 0,
@@ -656,6 +787,8 @@ function renderTypeBreakdown(records) {
     monthly14Weeks: 0,
     emergency: 0,
     notListed: 0,
+    writeOff: 0,
+    hatagHatag: 0,
   };
 
   const balances = {
@@ -666,12 +799,34 @@ function renderTypeBreakdown(records) {
     monthly14Weeks: 0,
     emergency: 0,
     notListed: 0,
+    writeOff: 0,
+    hatagHatag: 0,
   };
 
   openRecords.forEach((record) => {
     const key = getTypeKey(record.payableWithin);
+    const outstanding = computeOutstandingBalance(record);
     counts[key] += 1;
-    balances[key] += computeOutstandingBalance(record);
+    balances[key] += outstanding;
+    if (Array.isArray(typeDetailBuckets[key])) {
+      typeDetailBuckets[key].push(record);
+    }
+  });
+
+  activeRecords.forEach((record) => {
+    const outstanding = Math.max(0, computeOutstandingBalance(record));
+
+    if (isWriteOffActive(record)) {
+      counts.writeOff += 1;
+      balances.writeOff += outstanding;
+      typeDetailBuckets.writeOff.push(record);
+    }
+
+    if (isHatagHatagActive(record)) {
+      counts.hatagHatag += 1;
+      balances.hatagHatag += outstanding;
+      typeDetailBuckets.hatagHatag.push(record);
+    }
   });
 
   let accountOfficerCount = 0;
@@ -703,6 +858,8 @@ function renderTypeBreakdown(records) {
   if (typeMonthly14Weeks) typeMonthly14Weeks.textContent = String(counts.monthly14Weeks);
   if (typeEmergency) typeEmergency.textContent = String(counts.emergency);
   if (typeNotListed) typeNotListed.textContent = String(counts.notListed);
+  if (typeWriteOff) typeWriteOff.textContent = String(counts.writeOff);
+  if (typeHatagHatag) typeHatagHatag.textContent = String(counts.hatagHatag);
   if (typeAccountOfficer) typeAccountOfficer.textContent = String(accountOfficerCount);
   if (typeSettled) typeSettled.textContent = String(settledCount);
 
@@ -713,8 +870,112 @@ function renderTypeBreakdown(records) {
   if (typeMonthly14WeeksBalance) typeMonthly14WeeksBalance.textContent = formatCurrency(balances.monthly14Weeks);
   if (typeEmergencyBalance) typeEmergencyBalance.textContent = formatCurrency(balances.emergency);
   if (typeNotListedBalance) typeNotListedBalance.textContent = formatCurrency(balances.notListed);
+  if (typeWriteOffBalance) typeWriteOffBalance.textContent = formatCurrency(balances.writeOff);
+  if (typeHatagHatagBalance) typeHatagHatagBalance.textContent = formatCurrency(balances.hatagHatag);
   if (typeAccountOfficerBalance) typeAccountOfficerBalance.textContent = formatCurrency(accountOfficerBalance);
   if (typeSettledBalance) typeSettledBalance.textContent = formatCurrency(settledBalance);
+}
+
+function getTypeDetailTitle(typeKey) {
+  const titles = {
+    monthlyOpen: "Monthly - Open",
+    biMonthly: "Bi - Monthly",
+    cashAdvance: "Cash Advance",
+    monthly60: "Monthly (60 Days) - Fixed",
+    monthly14Weeks: "Monthly (14 weeks)",
+    emergency: "Emergency Loan - Fixed",
+    notListed: "Not Listed",
+    writeOff: "Write-Off",
+    hatagHatag: "Hatag-Hatag",
+    settled: "Settled",
+    pastDue: "Past Due",
+  };
+
+  return titles[typeKey] || "Loan Type";
+}
+
+function getRecordStatusLabel(record) {
+  if (record?.isSettled === true) {
+    return "Settled";
+  }
+  if (isWriteOffActive(record)) {
+    return "Write-Off";
+  }
+  if (isHatagHatagActive(record)) {
+    return "Hatag-Hatag";
+  }
+  return "Active";
+}
+
+function openTypeDataModal(typeKey) {
+  const typeLabel = getTypeDetailTitle(typeKey);
+  const records = (typeDetailBuckets[typeKey] || []).slice();
+
+  if (portfolioReleaseDataTitle) {
+    portfolioReleaseDataTitle.textContent = `${typeLabel} Data`;
+  }
+
+  if (!portfolioReleaseDataContent) {
+    return;
+  }
+
+  if (records.length === 0) {
+    if (portfolioReleaseDataSubtitle) {
+      portfolioReleaseDataSubtitle.textContent = "No matching records for this type.";
+    }
+    portfolioReleaseDataContent.innerHTML = '<p class="empty" style="margin: 0;">No records found.</p>';
+    openReleaseDataModal();
+    return;
+  }
+
+  const sorted = records
+    .slice()
+    .sort((a, b) => String(b.dateGranted || "").localeCompare(String(a.dateGranted || "")));
+
+  const totalRelease = sorted.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const totalOutstanding = sorted.reduce((sum, record) => sum + Math.max(0, computeOutstandingBalance(record)), 0);
+  const totalInterest = sorted.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
+
+  if (portfolioReleaseDataSubtitle) {
+    portfolioReleaseDataSubtitle.textContent = `Count: ${sorted.length} | Total Release: ${formatCurrency(totalRelease)} | Total Outstanding: ${formatCurrency(totalOutstanding)} | Total Interest: ${formatCurrency(totalInterest)}`;
+  }
+
+  const rows = sorted
+    .map((record) => {
+      const borrowerName = String(record?.name || "-");
+      const dateLabel = formatLongDate(record.dateGranted) || "-";
+      const released = Number(record.amount || 0);
+      const outstanding = Math.max(0, computeOutstandingBalance(record));
+      const status = getRecordStatusLabel(record);
+
+      return `<tr>
+        <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12);">${borrowerName}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); white-space: nowrap;">${dateLabel}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); text-align: right; white-space: nowrap;">${formatCurrency(released)}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); text-align: right; white-space: nowrap;">${formatCurrency(outstanding)}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); text-align: center; white-space: nowrap;">${status}</td>
+      </tr>`;
+    })
+    .join("");
+
+  portfolioReleaseDataContent.innerHTML = `
+    <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem;">
+      <thead>
+        <tr>
+          <th style="text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Borrower</th>
+          <th style="text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Date</th>
+          <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Released</th>
+          <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Outstanding</th>
+          <th style="text-align: center; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+
+  openReleaseDataModal();
 }
 
 function getOfficerNameFromRecord(record) {
@@ -870,7 +1131,8 @@ function renderPortfolio() {
   const totalEarnedInterest = activeRecords.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
   const totalOutstanding = activeRecords.reduce((sum, record) => sum + computeOutstandingBalance(record), 0);
   const todayIso = new Date().toISOString().slice(0, 10);
-  const pastDueCount = activeRecords.filter((record) => isPastDueRecord(record, todayIso)).length;
+  const pastDueRecords = activeRecords.filter((record) => isPastDueRecord(record, todayIso));
+  const pastDueCount = pastDueRecords.length;
 
   if (portfolioTotal) {
     portfolioTotal.textContent = formatCurrency(totalReleased);
@@ -890,6 +1152,9 @@ function renderPortfolio() {
   if (portfolioPastDueCount) {
     portfolioPastDueCount.textContent = String(pastDueCount);
   }
+  if (portfolioPastDueBtn) {
+    portfolioPastDueBtn.disabled = pastDueCount === 0;
+  }
   if (portfolioAverage) {
     portfolioAverage.textContent = formatCurrency(totalReleased);
   }
@@ -897,6 +1162,7 @@ function renderPortfolio() {
   renderReleasedInterestBreakdown(activeRecords);
 
   renderTypeBreakdown(allRecords);
+  typeDetailBuckets.pastDue = pastDueRecords.slice();
 
   renderDailyCollections(allRecords);
 
@@ -971,6 +1237,12 @@ function closeDrawer() {
 }
 
 function openReleaseDataModal() {
+  if (portfolioReleaseDataTitle) {
+    portfolioReleaseDataTitle.textContent = "Released Loan Data";
+  }
+  if (portfolioReleaseDataSubtitle) {
+    portfolioReleaseDataSubtitle.textContent = "Detailed list of Date, Released, Rate, and Interest.";
+  }
   portfolioReleaseDataModal?.classList.add("show");
   portfolioReleaseDataModal?.setAttribute("aria-hidden", "false");
 }
@@ -1001,6 +1273,40 @@ portfolioHamburgerBtn?.addEventListener("click", openDrawer);
 drawerCloseBtn?.addEventListener("click", closeDrawer);
 drawerOverlay?.addEventListener("click", closeDrawer);
 showReleasedDataBtn?.addEventListener("click", openReleaseDataModal);
+portfolioPastDueBtn?.addEventListener("click", () => {
+  openTypeDataModal("pastDue");
+});
+portfolioTypesGrid?.addEventListener("click", (event) => {
+  const trigger = event.target instanceof Element ? event.target.closest(".portfolio-type-card[data-type-key]") : null;
+  if (!(trigger instanceof HTMLElement)) {
+    return;
+  }
+
+  const typeKey = String(trigger.dataset.typeKey || "").trim();
+  if (!typeKey) {
+    return;
+  }
+
+  openTypeDataModal(typeKey);
+});
+portfolioTypesGrid?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+
+  const trigger = event.target instanceof Element ? event.target.closest(".portfolio-type-card[data-type-key]") : null;
+  if (!(trigger instanceof HTMLElement)) {
+    return;
+  }
+
+  event.preventDefault();
+  const typeKey = String(trigger.dataset.typeKey || "").trim();
+  if (!typeKey) {
+    return;
+  }
+
+  openTypeDataModal(typeKey);
+});
 portfolioReleaseDataCloseBtn?.addEventListener("click", closeReleaseDataModal);
 portfolioReleaseDataModal?.addEventListener("click", (event) => {
   if (event.target === portfolioReleaseDataModal) {
@@ -1037,9 +1343,8 @@ if (sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
   if (portfolioDateFilterInput) {
     portfolioDateFilterInput.value = "";
   }
-  if (portfolioMonthFilterInput) {
-    portfolioMonthFilterInput.value = "";
-  }
+  buildOfficerCards();
+  refreshOfficerNamesFromServer();
   loadRecordsFromServer().then(() => renderPortfolio());
 }
 

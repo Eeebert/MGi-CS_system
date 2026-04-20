@@ -150,6 +150,43 @@
         display: none;
       }
 
+      .admin-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        z-index: 1200;
+        background: rgba(3, 9, 16, 0.62);
+        backdrop-filter: blur(3px);
+      }
+
+      .admin-modal.is-open {
+        display: flex;
+      }
+
+      .admin-modal-card {
+        width: min(420px, 100%);
+        padding: 14px;
+        border: 1px solid rgba(108, 145, 177, 0.45);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(18, 28, 40, 0.98), rgba(11, 18, 28, 0.99));
+        box-shadow: 0 16px 30px rgba(2, 8, 16, 0.58), inset 0 1px 0 rgba(170, 207, 236, 0.12);
+      }
+
+      .admin-modal-title {
+        margin: 0 0 6px;
+        font-size: 0.98rem;
+        color: #eef4fb;
+      }
+
+      .admin-modal-subtitle {
+        margin: 0 0 12px;
+        color: #c4d1df;
+        font-size: 0.8rem;
+      }
+
       @media (max-width: 900px) {
         .admin-layout {
           grid-template-columns: 1fr;
@@ -272,8 +309,48 @@
           <p id="admin-settings-message" class="admin-message" role="status" aria-live="polite"></p>
         </form>
       </section>
+
+      <section id="admin-officers-panel" class="panel admin-card admin-hidden" style="padding: 14px;">
+        <h2 class="admin-title">Account Officers</h2>
+        <p class="admin-subtitle">Add or remove account officers. Changes take effect on next page load of the officer dashboard.</p>
+        <div id="officers-list" style="display: grid; gap: 4px; margin-bottom: 10px;"></div>
+        <div class="admin-field" style="margin-bottom: 8px;">
+          <label for="new-officer-name">New Officer Name</label>
+          <div style="display: flex; gap: 6px;">
+            <div class="admin-input-wrap" style="flex: 1;">
+              <input id="new-officer-name" type="text" autocomplete="off" style="padding-right: 12px;" />
+            </div>
+            <button id="add-officer-btn" type="button" class="btn-primary" style="flex-shrink: 0;">Add</button>
+          </div>
+        </div>
+        <div class="admin-actions">
+          <button id="reset-officers-btn" type="button" class="btn-danger">Reset to Defaults</button>
+        </div>
+        <p id="officers-message" class="admin-message" role="status" aria-live="polite"></p>
+      </section>
       </div>
     </main>
+
+    <div id="officer-auth-modal" class="admin-modal" aria-hidden="true">
+      <div class="admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="officer-auth-title">
+        <h3 id="officer-auth-title" class="admin-modal-title">Confirm Officer Update</h3>
+        <p id="officer-auth-subtitle" class="admin-modal-subtitle">Enter admin password to continue.</p>
+        <div class="admin-field" style="margin-bottom: 10px;">
+          <label for="officer-auth-password">Admin Password</label>
+          <div class="admin-input-wrap">
+            <input id="officer-auth-password" type="password" autocomplete="current-password" />
+            <button type="button" class="btn-secondary admin-eye-btn" data-toggle-target="officer-auth-password" aria-label="Show password">
+              <span class="eye-icon" aria-hidden="true"></span>
+            </button>
+          </div>
+        </div>
+        <p id="officer-auth-message" class="admin-message" role="status" aria-live="polite"></p>
+        <div class="admin-actions" style="justify-content: flex-end; margin-top: 10px;">
+          <button id="officer-auth-cancel" type="button" class="btn-secondary">Cancel</button>
+          <button id="officer-auth-confirm" type="button" class="btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
 
     <script src="client-security.js"></script>
     <script src="admin.js"></script>

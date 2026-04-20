@@ -25,6 +25,99 @@ const dashboard2UsernameInput = document.getElementById("dashboard2-username");
 const dashboard2PasswordInput = document.getElementById("dashboard2-password");
 const adminPasswordInput = document.getElementById("admin-password");
 const resetDefaultsBtn = document.getElementById("admin-reset-defaults");
+const officersPanel = document.getElementById("admin-officers-panel");
+const officersListEl = document.getElementById("officers-list");
+const newOfficerNameInput = document.getElementById("new-officer-name");
+const addOfficerBtn = document.getElementById("add-officer-btn");
+const resetOfficersBtn = document.getElementById("reset-officers-btn");
+const officersMessage = document.getElementById("officers-message");
+const officerAuthModal = document.getElementById("officer-auth-modal");
+const officerAuthSubtitle = document.getElementById("officer-auth-subtitle");
+const officerAuthPasswordInput = document.getElementById("officer-auth-password");
+const officerAuthMessage = document.getElementById("officer-auth-message");
+const officerAuthCancelBtn = document.getElementById("officer-auth-cancel");
+const officerAuthConfirmBtn = document.getElementById("officer-auth-confirm");
+
+const OFFICER_NAMES_STORAGE_KEY = "mgi_officer_names";
+const OFFICER_NAMES_DEFAULT_LIST = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
+const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+
+function getStoredOfficerNames() {
+  try {
+    const raw = localStorage.getItem(OFFICER_NAMES_STORAGE_KEY);
+    if (!raw) return [...OFFICER_NAMES_DEFAULT_LIST];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...OFFICER_NAMES_DEFAULT_LIST];
+  } catch {
+    return [...OFFICER_NAMES_DEFAULT_LIST];
+  }
+}
+
+function saveStoredOfficerNames(names) {
+  localStorage.setItem(OFFICER_NAMES_STORAGE_KEY, JSON.stringify(names));
+  saveOfficerNamesToServer(names);
+}
+
+async function loadOfficerNamesFromServer() {
+  try {
+    const urls = [
+      `/api/state/${encodeURIComponent(OFFICER_NAMES_STORAGE_KEY)}?t=${Date.now()}`,
+      `${API_FALLBACK_ORIGIN}/api/state/${encodeURIComponent(OFFICER_NAMES_STORAGE_KEY)}?t=${Date.now()}`,
+    ];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        const list = Array.isArray(data?.payload) && data.payload.length > 0 ? data.payload : null;
+        if (list) {
+          localStorage.setItem(OFFICER_NAMES_STORAGE_KEY, JSON.stringify(list));
+          return list;
+        }
+      } catch { /* try next */ }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+async function saveOfficerNamesToServer(names) {
+  try {
+    const urls = [
+      `/api/state/${encodeURIComponent(OFFICER_NAMES_STORAGE_KEY)}`,
+      `${API_FALLBACK_ORIGIN}/api/state/${encodeURIComponent(OFFICER_NAMES_STORAGE_KEY)}`,
+    ];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload: names }),
+        });
+        if (res.ok) return true;
+      } catch { /* try next */ }
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
+function escapeHtml(str) {
+  return String(str || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function renderOfficersList() {
+  if (!officersListEl) return;
+  const names = getStoredOfficerNames();
+  if (names.length === 0) {
+    officersListEl.innerHTML = '<p style="color:#c4d1df;font-size:0.8rem;">No officers added yet.</p>';
+    return;
+  }
+  officersListEl.innerHTML = names.map((name, i) =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(108,145,177,0.2);">
+      <span style="flex:1;color:#eef4fb;font-size:0.85rem;">${escapeHtml(name)}</span>
+      <button type="button" class="btn-danger remove-officer-btn" data-index="${i}" style="padding:3px 10px;font-size:0.75rem;">Remove</button>
+    </div>`
+  ).join("");
+}
 
 function getAuthSettings() {
   try {
@@ -84,6 +177,70 @@ function fillSettingsForm(settings) {
 function setUnlocked(unlocked) {
   gatePanel?.classList.toggle("admin-hidden", Boolean(unlocked));
   settingsPanel?.classList.toggle("admin-hidden", !unlocked);
+  officersPanel?.classList.toggle("admin-hidden", !unlocked);
+  if (unlocked) {
+    // Load from server first so the admin always sees the latest list
+    loadOfficerNamesFromServer().then(() => renderOfficersList());
+  }
+}
+
+let resolveOfficerAuthRequest = null;
+
+function closeOfficerAuthModal() {
+  officerAuthModal?.classList.remove("is-open");
+  officerAuthModal?.setAttribute("aria-hidden", "true");
+  if (officerAuthPasswordInput) {
+    officerAuthPasswordInput.value = "";
+    officerAuthPasswordInput.type = "password";
+  }
+  setMessage(officerAuthMessage, "", false);
+}
+
+function openOfficerAuthModal(actionLabel) {
+  if (officerAuthSubtitle) {
+    officerAuthSubtitle.textContent = `Enter admin password to ${actionLabel}.`;
+  }
+  if (officerAuthPasswordInput) {
+    officerAuthPasswordInput.value = "";
+    officerAuthPasswordInput.type = "password";
+  }
+  setMessage(officerAuthMessage, "", false);
+  officerAuthModal?.classList.add("is-open");
+  officerAuthModal?.setAttribute("aria-hidden", "false");
+  window.requestAnimationFrame(() => officerAuthPasswordInput?.focus());
+}
+
+function settleOfficerAuth(result) {
+  const resolver = resolveOfficerAuthRequest;
+  resolveOfficerAuthRequest = null;
+  closeOfficerAuthModal();
+  if (typeof resolver === "function") {
+    resolver(result);
+  }
+}
+
+function requestAdminPasswordForOfficerChange(actionLabel) {
+  return new Promise((resolve) => {
+    resolveOfficerAuthRequest = resolve;
+    openOfficerAuthModal(actionLabel);
+  });
+}
+
+function confirmOfficerAuthPassword() {
+  const settings = getAuthSettings();
+  const candidate = String(officerAuthPasswordInput?.value || "").trim();
+  if (!candidate) {
+    setMessage(officerAuthMessage, "Admin password is required.", false);
+    officerAuthPasswordInput?.focus();
+    return;
+  }
+  if (candidate !== String(settings.adminPassword || "")) {
+    setMessage(officerAuthMessage, "Invalid admin password.", false);
+    officerAuthPasswordInput?.focus();
+    officerAuthPasswordInput?.select();
+    return;
+  }
+  settleOfficerAuth(true);
 }
 
 function toggleFieldVisibility(inputId, button) {
@@ -155,6 +312,92 @@ resetDefaultsBtn?.addEventListener("click", () => {
   saveAuthSettings({ ...DEFAULT_AUTH_SETTINGS });
   fillSettingsForm(DEFAULT_AUTH_SETTINGS);
   setMessage(settingsMessage, "Credentials reset to defaults.", true);
+});
+
+addOfficerBtn?.addEventListener("click", async () => {
+  const name = String(newOfficerNameInput?.value || "").trim();
+  if (!name) {
+    setMessage(officersMessage, "Enter an officer name.", false);
+    return;
+  }
+  const allowed = await requestAdminPasswordForOfficerChange("add this officer");
+  if (!allowed) {
+    setMessage(officersMessage, "Officer update cancelled.", false);
+    return;
+  }
+  const names = getStoredOfficerNames();
+  if (names.some((n) => n.toLowerCase() === name.toLowerCase())) {
+    setMessage(officersMessage, `"${name}" already exists.`, false);
+    return;
+  }
+  names.push(name);
+  saveStoredOfficerNames(names);
+  if (newOfficerNameInput) newOfficerNameInput.value = "";
+  renderOfficersList();
+  setMessage(officersMessage, `"${name}" added successfully.`, true);
+});
+
+newOfficerNameInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addOfficerBtn?.click();
+  }
+});
+
+officersListEl?.addEventListener("click", async (event) => {
+  const btn = event.target instanceof Element ? event.target.closest(".remove-officer-btn") : null;
+  if (!btn) return;
+  const allowed = await requestAdminPasswordForOfficerChange("remove this officer");
+  if (!allowed) {
+    setMessage(officersMessage, "Officer update cancelled.", false);
+    return;
+  }
+  const index = Number(btn.getAttribute("data-index"));
+  const names = getStoredOfficerNames();
+  if (!Number.isFinite(index) || index < 0 || index >= names.length) return;
+  const removed = names[index];
+  names.splice(index, 1);
+  saveStoredOfficerNames(names);
+  renderOfficersList();
+  setMessage(officersMessage, `"${removed}" removed.`, true);
+});
+
+resetOfficersBtn?.addEventListener("click", async () => {
+  const ok = window.confirm("Reset officer list to defaults?");
+  if (!ok) return;
+  const allowed = await requestAdminPasswordForOfficerChange("reset officers to defaults");
+  if (!allowed) {
+    setMessage(officersMessage, "Officer update cancelled.", false);
+    return;
+  }
+  saveStoredOfficerNames([...OFFICER_NAMES_DEFAULT_LIST]);
+  renderOfficersList();
+  setMessage(officersMessage, "Officer list reset to defaults.", true);
+});
+
+officerAuthCancelBtn?.addEventListener("click", () => {
+  settleOfficerAuth(false);
+});
+
+officerAuthConfirmBtn?.addEventListener("click", () => {
+  confirmOfficerAuthPassword();
+});
+
+officerAuthModal?.addEventListener("click", (event) => {
+  if (event.target === officerAuthModal) {
+    settleOfficerAuth(false);
+  }
+});
+
+officerAuthPasswordInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    confirmOfficerAuthPassword();
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    settleOfficerAuth(false);
+  }
 });
 
 setUnlocked(false);

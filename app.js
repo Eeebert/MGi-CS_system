@@ -49,6 +49,10 @@ const paymentConfirmText = document.getElementById("payment-confirm-text");
 const paymentConfirmAmount = document.getElementById("payment-confirm-amount");
 const paymentConfirmCancelBtn = document.getElementById("payment-confirm-cancel");
 const paymentConfirmYesBtn = document.getElementById("payment-confirm-yes");
+const deletePaymentConfirmModal = document.getElementById("delete-payment-confirm-modal");
+const deletePaymentConfirmText = document.getElementById("delete-payment-confirm-text");
+const deletePaymentConfirmCancelBtn = document.getElementById("delete-payment-confirm-cancel");
+const deletePaymentConfirmYesBtn = document.getElementById("delete-payment-confirm-yes");
 const loadingScreen = document.getElementById("loading-screen");
 const loginForm = document.getElementById("login-form");
 const loginUsernameInput = document.getElementById("login-username");
@@ -633,7 +637,39 @@ async function refreshBackupHealthStatus() {
 
 const STORAGE_KEY = "mgi_loan_records";
 const OFFICER_STORAGE_KEY_PREFIX = "mgi_officer_records_";
-const DEFAULT_OFFICER_NAMES = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
+let DEFAULT_OFFICER_NAMES = (() => {
+  try {
+    const raw = localStorage.getItem("mgi_officer_names");
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
+  } catch { return ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"]; }
+})();
+
+async function refreshOfficerNamesFromServer() {
+  let didUpdateOfficerNames = false;
+  try {
+    const res = await fetchStateApi("mgi_officer_names", {}, true);
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = Array.isArray(data?.payload) && data.payload.length > 0 ? data.payload : null;
+    if (list) {
+      DEFAULT_OFFICER_NAMES = list;
+      localStorage.setItem("mgi_officer_names", JSON.stringify(list));
+      didUpdateOfficerNames = true;
+    }
+  } catch { /* ignore */ }
+  if (didUpdateOfficerNames) {
+    renderOfficerSidebarLinks();
+  }
+}
+
+function renderOfficerSidebarLinks() {
+  const list = document.querySelector(".side-drawer-officers-list");
+  if (!list) return;
+  list.innerHTML = DEFAULT_OFFICER_NAMES.map(
+    (name) => `<a href="officer-dashboard.html?officer=${encodeURIComponent(name)}" class="officer-link">${name}</a>`
+  ).join("\n          ");
+}
 const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
@@ -665,7 +701,9 @@ let isReleaseSummaryOpen = false;
 let writeOffPasswordResolver = null;
 let restoreAuthPasswordResolver = null;
 let editRecordResolver = null;
+let deletePaymentConfirmResolver = null;
 let paymentEntryRowIndex = -1;
+let paymentHistoryRowIndex = -1;
 let pendingPaymentConfirm = null;
 const PAYMENT_MODE_STANDARD = "standard";
 const PAYMENT_MODE_PRINCIPAL_ONLY = "principal-only";
@@ -2429,6 +2467,45 @@ function applyCompoundedPeriodicInterest(balance, periodicRate, periods) {
   return balance * Math.pow(1 + periodicRate, periods);
 }
 
+function getOpenLoanOutstandingFromHistory(record, referenceDate = getInterestReferenceDate(record)) {
+  const effectiveInterestRate = getEffectiveInterestRate(record) / 100;
+  const history = [...getPaymentHistory(record)]
+    .filter((item) => item?.date && compareIsoDate(item.date, toIsoDate(referenceDate)) <= 0)
+    .sort((a, b) => compareIsoDate(a.date, b.date));
+
+  let outstandingBalance = Math.max(0, Number(record.amount || 0));
+  let lastCycle = 0;
+
+  for (const item of history) {
+    const paymentDate = new Date(`${item.date}T00:00:00`);
+    const paymentCycles = getOpenLoanInterestPeriodsFromReferenceDate(
+      record.dateGranted,
+      record.payableWithin,
+      paymentDate
+    );
+    const cyclesSince = Math.max(0, paymentCycles - lastCycle);
+    outstandingBalance = applyCompoundedPeriodicInterest(outstandingBalance, effectiveInterestRate, cyclesSince);
+
+    const amountPaid = Math.max(0, Number(item.amount || 0));
+    const interestReduced = Math.max(0, Number(item.interestReduced || 0));
+    const historyOnlyHatagPayment = isHistoryOnlyHatagPayment(record, item);
+    const balanceReduction = historyOnlyHatagPayment ? 0 : Math.max(0, amountPaid + interestReduced);
+
+    outstandingBalance = Math.max(0, outstandingBalance - balanceReduction);
+    lastCycle = paymentCycles;
+  }
+
+  const currentCycles = getOpenLoanInterestPeriodsFromReferenceDate(
+    record.dateGranted,
+    record.payableWithin,
+    referenceDate
+  );
+  const cyclesSince = Math.max(0, currentCycles - lastCycle);
+  outstandingBalance = applyCompoundedPeriodicInterest(outstandingBalance, effectiveInterestRate, cyclesSince);
+
+  return Math.max(0, outstandingBalance);
+}
+
 function computeRemainingPayable(record) {
   if (isSettledRecord(record)) {
     return 0;
@@ -2439,51 +2516,11 @@ function computeRemainingPayable(record) {
   }
 
   if (isMonthlyOpenLoan(record.payableWithin)) {
-    const effectiveInterestRate = getEffectiveInterestRate(record);
-    const currentCycles = getOpenLoanInterestPeriodsFromReferenceDate(
-      record.dateGranted,
-      record.payableWithin,
-      getInterestReferenceDate(record)
-    );
-    const storedBalance = Number(record.monthlyOpenCurrentBalance);
-    const storedCycles = Number(record.monthlyOpenPaymentCycles ?? -1);
-
-    let outstanding;
-    if (Number.isFinite(storedBalance) && storedBalance >= 0 && storedCycles >= 0) {
-      const cyclesSince = Math.max(0, currentCycles - storedCycles);
-      outstanding = storedBalance * Math.pow(1 + effectiveInterestRate / 100, cyclesSince);
-    } else {
-      outstanding = record.amount * Math.pow(1 + effectiveInterestRate / 100, currentCycles);
-    }
-
-    return Math.max(0, outstanding);
+    return getOpenLoanOutstandingFromHistory(record, getInterestReferenceDate(record));
   }
 
   if (record.payableWithin === LOAN_TYPE_BI_MONTHLY_OPEN) {
-    // Use stored balance snapshot taken at the time of last payment.
-    // This ensures any payment at any cycle deducts correctly and future
-    // cycles compound only on the remaining balance.
-    // e.g. 11000 - 700 = 10300 stored, then 10300 * 1.10 = 11330 next cycle.
-    const effectiveInterestRate = getEffectiveInterestRate(record);
-    const currentCycles = getOpenLoanInterestPeriodsFromReferenceDate(
-      record.dateGranted,
-      record.payableWithin,
-      getInterestReferenceDate(record)
-    );
-    const storedBalance = Number(record.biMonthlyCurrentBalance);
-    const storedCycles = Number(record.biMonthlyPaymentCycles ?? -1);
-
-    let outstanding;
-    if (Number.isFinite(storedBalance) && storedBalance >= 0 && storedCycles >= 0) {
-      // Compound from the last stored post-payment balance
-      const cyclesSince = Math.max(0, currentCycles - storedCycles);
-      outstanding = storedBalance * Math.pow(1 + effectiveInterestRate / 100, cyclesSince);
-    } else {
-      // No payment yet — compound from original amount
-      outstanding = record.amount * Math.pow(1 + effectiveInterestRate / 100, currentCycles);
-    }
-
-    return Math.max(0, outstanding);
+    return getOpenLoanOutstandingFromHistory(record, getInterestReferenceDate(record));
   }
 
   const grossPayable = computeBaseTotalPayable(record);
@@ -3187,6 +3224,7 @@ async function exportToExcel() {
     "Mode of Payment",
     "Date Granted",
     "Due Date",
+    "Moved Pay Date",
     "Outstanding Balance",
     "Arrears",
     "Other Arrears",
@@ -3226,6 +3264,7 @@ async function exportToExcel() {
       escapeCSV(record.modeOfPayment || ""),
       escapeCSV(formatUpperDate(toIsoDate(new Date(record.dateGranted || "")))),
       escapeCSV(formatUpperDate(toIsoDate(new Date(record.dueDate || "")))),
+      escapeCSV(formatUpperDate(toIsoDate(new Date(record.payDate || record.dueDate || "")))),
       formatWholeAmount(outstanding),
       formatWholeAmount(arrears),
       formatWholeAmount(otherArrears),
@@ -3957,13 +3996,15 @@ function closePaymentHistoryModal() {
   }
   paymentHistoryModal.classList.remove("show");
   paymentHistoryModal.setAttribute("aria-hidden", "true");
+  paymentHistoryRowIndex = -1;
 }
 
-function openPaymentHistoryModal(record, paymentHistory) {
+function openPaymentHistoryModal(record, paymentHistory, rowIndex = -1) {
   if (!paymentHistoryModal || !paymentHistoryContent) {
     return;
   }
 
+  paymentHistoryRowIndex = Number.isInteger(rowIndex) && rowIndex >= 0 ? rowIndex : -1;
   const isHatagMode = isHatagHatagActive(record);
   if (paymentHistoryTitle) {
     paymentHistoryTitle.textContent = `Payment History - ${record.name}`;
@@ -3978,9 +4019,10 @@ function openPaymentHistoryModal(record, paymentHistory) {
 
   let totalPaid = 0;
   let totalRebate = 0;
-  const rows = [...paymentHistory]
+  const rows = paymentHistory
+    .map((item, historyIndex) => ({ item, historyIndex }))
     .reverse()
-    .map((item, idx) => {
+    .map(({ item, historyIndex }, idx) => {
       const amountPaid = Number(item.amount || 0);
       const storedPrincipalPaid = Number(item.principalPaid || 0);
       const storedInterestPaid = Number(item.interestPaid || 0);
@@ -4003,6 +4045,9 @@ function openPaymentHistoryModal(record, paymentHistory) {
           <span>${amountDisplay}</span>
           <span>P: ${formatCurrency(principalPaid)}</span>
           <span>I: ${formatCurrency(interestPaid)}</span>
+          <span>
+            <button type="button" class="btn-danger payment-history-delete-btn" data-history-index="${historyIndex}">Delete</button>
+          </span>
         </div>
       `;
     })
@@ -4016,6 +4061,7 @@ function openPaymentHistoryModal(record, paymentHistory) {
         <span>Amount</span>
         <span>P (Principal)</span>
         <span>I (Interest)</span>
+        <span>Actions</span>
       </div>
       ${rows}
     </div>
@@ -4024,6 +4070,71 @@ function openPaymentHistoryModal(record, paymentHistory) {
 
   paymentHistoryModal.classList.add("show");
   paymentHistoryModal.setAttribute("aria-hidden", "false");
+}
+
+function isHistoryOnlyHatagPayment(record, entry) {
+  if (!isHatagHatagActive(record)) {
+    return false;
+  }
+
+  const hatagDate = String(record?.hatagHatagDate || "").trim();
+  if (!hatagDate) {
+    return false;
+  }
+
+  const entryDate = String(entry?.date || "").trim();
+  if (!entryDate || compareIsoDate(entryDate, hatagDate) < 0) {
+    return false;
+  }
+
+  const principalPaid = Number(entry?.principalPaid || 0);
+  const interestReduced = Number(entry?.interestReduced || 0);
+  const rebateApplied = Number(entry?.rebateApplied || 0);
+  return principalPaid <= 0 && interestReduced <= 0 && rebateApplied <= 0;
+}
+
+function recomputeRecordTotalPaidAmount(record) {
+  const history = getPaymentHistory(record);
+  const totalPaid = history.reduce((sum, entry) => {
+    const amount = Number(entry?.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return sum;
+    }
+    if (isHistoryOnlyHatagPayment(record, entry)) {
+      return sum;
+    }
+    return sum + amount;
+  }, 0);
+  record.totalPaidAmount = Math.max(0, totalPaid);
+}
+
+async function deletePaymentHistoryEntry(rowIndex, historyIndex) {
+  const records = getRecords();
+  const record = records[rowIndex];
+  if (!record) {
+    showMessage("Record no longer exists.", "error");
+    return;
+  }
+
+  const history = getPaymentHistory(record);
+  if (!history[historyIndex]) {
+    showMessage("Payment history entry not found.", "error");
+    return;
+  }
+
+  const confirmed = await requestDeletePaymentConfirmation("Delete this payment entry? This action cannot be undone.");
+  if (!confirmed) {
+    return;
+  }
+
+  history.splice(historyIndex, 1);
+  record.paymentHistory = history;
+  recomputeRecordTotalPaidAmount(record);
+  setRecords(records);
+  renderRecords();
+  openPaymentHistoryModal(records[rowIndex], getPaymentHistory(records[rowIndex]), rowIndex);
+  showMessage("Payment history entry deleted.", "success");
+  showToast("Payment history deleted", "success");
 }
 
 function closePaymentEntryModal() {
@@ -4064,6 +4175,33 @@ function closePaymentConfirmModal() {
   pendingPaymentConfirm = null;
   paymentConfirmModal?.classList.remove("show");
   paymentConfirmModal?.setAttribute("aria-hidden", "true");
+}
+
+function closeDeletePaymentConfirmModal(result = false) {
+  deletePaymentConfirmModal?.classList.remove("show");
+  deletePaymentConfirmModal?.setAttribute("aria-hidden", "true");
+  if (deletePaymentConfirmText) {
+    deletePaymentConfirmText.textContent = "Delete this payment entry? This action cannot be undone.";
+  }
+
+  if (typeof deletePaymentConfirmResolver === "function") {
+    deletePaymentConfirmResolver(Boolean(result));
+    deletePaymentConfirmResolver = null;
+  }
+}
+
+function requestDeletePaymentConfirmation(message = "Delete this payment entry? This action cannot be undone.") {
+  if (!deletePaymentConfirmModal || !deletePaymentConfirmText) {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  deletePaymentConfirmText.textContent = String(message || "Delete this payment entry? This action cannot be undone.");
+  deletePaymentConfirmModal.classList.add("show");
+  deletePaymentConfirmModal.setAttribute("aria-hidden", "false");
+
+  return new Promise((resolve) => {
+    deletePaymentConfirmResolver = resolve;
+  });
 }
 
 function updatePaymentEntryPreview() {
@@ -5181,7 +5319,7 @@ body.addEventListener("click", async (event) => {
     }
 
     const paymentHistory = getPaymentHistory(record);
-    openPaymentHistoryModal(record, paymentHistory);
+    openPaymentHistoryModal(record, paymentHistory, rowIndex);
     return;
   }
 
@@ -5471,6 +5609,7 @@ function applyPaymentForRow(rowIndex, paidAmount, mode = PAYMENT_MODE_STANDARD) 
     rebateApplied,
   });
   records[rowIndex].paymentHistory = history;
+
   setRecords(records);
   renderRecords();
   const paymentLabel = mode === PAYMENT_MODE_PRINCIPAL_ONLY ? "Principal-only payment" : "Payment";
@@ -5538,6 +5677,20 @@ paymentConfirmYesBtn?.addEventListener("click", () => {
 paymentConfirmModal?.addEventListener("click", (event) => {
   if (event.target === paymentConfirmModal) {
     closePaymentConfirmModal();
+  }
+});
+
+deletePaymentConfirmCancelBtn?.addEventListener("click", () => {
+  closeDeletePaymentConfirmModal(false);
+});
+
+deletePaymentConfirmYesBtn?.addEventListener("click", () => {
+  closeDeletePaymentConfirmModal(true);
+});
+
+deletePaymentConfirmModal?.addEventListener("click", (event) => {
+  if (event.target === deletePaymentConfirmModal) {
+    closeDeletePaymentConfirmModal(false);
   }
 });
 
@@ -5714,6 +5867,27 @@ paymentHistoryModal?.addEventListener("click", (event) => {
   }
 });
 
+paymentHistoryContent?.addEventListener("click", (event) => {
+  const actionBtn = event.target.closest(".payment-history-delete-btn");
+
+  if (!actionBtn) {
+    return;
+  }
+
+  if (!Number.isInteger(paymentHistoryRowIndex) || paymentHistoryRowIndex < 0) {
+    showMessage("Unable to update payment history.", "error");
+    return;
+  }
+
+  const historyIndex = Number(actionBtn.dataset.historyIndex);
+  if (!Number.isInteger(historyIndex) || historyIndex < 0) {
+    showMessage("Invalid payment history entry.", "error");
+    return;
+  }
+
+  void deletePaymentHistoryEntry(paymentHistoryRowIndex, historyIndex);
+});
+
 window.addEventListener("keydown", (event) => {
   if (paymentEntryModal?.classList.contains("show")) {
     if (event.key === "Escape") {
@@ -5730,6 +5904,18 @@ window.addEventListener("keydown", (event) => {
   if (paymentHistoryModal?.classList.contains("show") && event.key === "Escape") {
     closePaymentHistoryModal();
     return;
+  }
+
+  if (deletePaymentConfirmModal?.classList.contains("show")) {
+    if (event.key === "Escape") {
+      closeDeletePaymentConfirmModal(false);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      closeDeletePaymentConfirmModal(true);
+      return;
+    }
   }
 
   if (restoreAuthModal?.classList.contains("show")) {
@@ -6042,7 +6228,9 @@ window.addEventListener("load", () => {
     userAgent: navigator.userAgent,
   });
 
-  // Pull latest data from the database, then re-render so all devices stay in sync
+  // Pull latest officer list and records from the database, then re-render
+  renderOfficerSidebarLinks();
+  refreshOfficerNamesFromServer();
   loadRecordsFromServer().then(() => renderRecords());
 
   if (sessionStorage.getItem(LOGIN_SESSION_KEY) === "1") {

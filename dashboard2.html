@@ -343,6 +343,17 @@
       </div>
     </div>
 
+    <div id="delete-payment-confirm-modal" class="dialog-backdrop" aria-hidden="true">
+      <div class="dialog-card delete-payment-confirm-card" role="dialog" aria-modal="true" aria-labelledby="delete-payment-confirm-title">
+        <h3 id="delete-payment-confirm-title">Delete Payment Entry</h3>
+        <p id="delete-payment-confirm-text" class="delete-payment-confirm-text">Delete this payment entry? This action cannot be undone.</p>
+        <div class="dialog-actions">
+          <button type="button" id="delete-payment-confirm-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="delete-payment-confirm-yes" class="btn-danger">Yes, Delete</button>
+        </div>
+      </div>
+    </div>
+
     <div id="logout-confirm-modal" class="dialog-backdrop" aria-hidden="true">
       <div class="dialog-card logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="logout-confirm-title">
         <h3 id="logout-confirm-title">Confirm Logout</h3>
