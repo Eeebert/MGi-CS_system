@@ -730,6 +730,7 @@ const EMPTY_OVERWRITE_GUARD_MS = 20000;
 let hasUnsyncedLocalChanges = false;
 const currentDashboardView = getDashboardViewFromLocation();
 const isSettledDashboardView = currentDashboardView === DASHBOARD_VIEW_SETTLED;
+let isInitialSettledSyncPending = isSettledDashboardView;
 let syncDebugState = {
   save: "idle",
   fetch: "idle",
@@ -1506,10 +1507,12 @@ async function loadRecordsFromServer() {
     const globalResult = await loadStateRecords(STORAGE_KEY);
 
     if (!globalResult.ok) {
-      const localRecords = filterMainDashboardRecords(readCachedStateRecords(STORAGE_KEY));
-      if (localRecords.length > 0) {
-        recordsCache = localRecords;
-        mirrorRecordsToLocalStorage(recordsCache);
+      if (!isSettledDashboardView) {
+        const localRecords = filterMainDashboardRecords(readCachedStateRecords(STORAGE_KEY));
+        if (localRecords.length > 0) {
+          recordsCache = localRecords;
+          mirrorRecordsToLocalStorage(recordsCache);
+        }
       }
       if (isSettledDashboardView) {
         await loadSettledOfficerRecordsFromServer();
@@ -1582,10 +1585,12 @@ async function loadRecordsFromServer() {
   } catch {
     // Network issue in server-only mode.
     console.error("[sync][main] Network error while fetching state");
-    const localRecords = filterMainDashboardRecords(readCachedStateRecords(STORAGE_KEY));
-    if (localRecords.length > 0) {
-      recordsCache = localRecords;
-      mirrorRecordsToLocalStorage(recordsCache);
+    if (!isSettledDashboardView) {
+      const localRecords = filterMainDashboardRecords(readCachedStateRecords(STORAGE_KEY));
+      if (localRecords.length > 0) {
+        recordsCache = localRecords;
+        mirrorRecordsToLocalStorage(recordsCache);
+      }
     }
     if (isSettledDashboardView) {
       await loadSettledOfficerRecordsFromServer();
@@ -1594,6 +1599,10 @@ async function loadRecordsFromServer() {
     setDiagnosticsPanel("error", "Network problem while syncing.", latestSyncIssue);
     setSyncStatus("error", "offline (server-only mode)");
     setSyncDebug({ fetch: "network-error" });
+  } finally {
+    if (isSettledDashboardView) {
+      isInitialSettledSyncPending = false;
+    }
   }
 }
 
@@ -4375,6 +4384,11 @@ function openPaymentEntryModal(rowIndex, record, mode = PAYMENT_MODE_STANDARD) {
 }
 
 function renderRecords() {
+  if (isSettledDashboardView && isInitialSettledSyncPending) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">Loading settled accounts...</td></tr>';
+    return;
+  }
+
   const records = getRecords();
   const viewRecords = getRecordsForCurrentDashboardView(records);
   const rows = getVisibleRecords(viewRecords);
@@ -6215,11 +6229,11 @@ function handleLogout() {
   closeLogoutConfirm();
   closeDrawer();
   showToast("Logging out...", "logout");
-  setTimeout(() => {
-    sessionStorage.removeItem(LOGIN_SESSION_KEY);
-    sessionStorage.clear();
-    window.location.reload();
-  }, 650);
+  // Clear both session flags and the short-lived navigation bridge so
+  // logout always takes effect on the first attempt.
+  clearAllStoredLogins();
+  sessionStorage.clear();
+  window.location.reload();
 }
 
 drawerLogoutBtn?.addEventListener("click", () => {
