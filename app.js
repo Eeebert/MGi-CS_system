@@ -864,16 +864,45 @@ function buildRecordFingerprint(record) {
 }
 
 function dedupeRecords(records) {
-  const seen = new Set();
   const merged = [];
+  const indexByFingerprint = new Map();
 
-  for (const record of records) {
+  for (const rawRecord of records) {
+    const record = rawRecord && typeof rawRecord === "object" ? { ...rawRecord } : rawRecord;
     const fingerprint = buildRecordFingerprint(record);
-    if (seen.has(fingerprint)) {
+    const existingIndex = indexByFingerprint.get(fingerprint);
+
+    if (typeof existingIndex === "undefined") {
+      indexByFingerprint.set(fingerprint, merged.length);
+      merged.push(record);
       continue;
     }
-    seen.add(fingerprint);
-    merged.push(record);
+
+    const existing = merged[existingIndex] || {};
+    const nextRecord = {
+      ...existing,
+      ...record,
+      // Preserve flags when record copies come from different server keys.
+      isSettled: existing?.isSettled === true || record?.isSettled === true,
+      isWriteOff: existing?.isWriteOff === true || record?.isWriteOff === true,
+      isHatagHatag: existing?.isHatagHatag === true || record?.isHatagHatag === true,
+      writeOffDate: String(existing?.writeOffDate || "").trim() || String(record?.writeOffDate || "").trim(),
+      hatagHatagDate: String(existing?.hatagHatagDate || "").trim() || String(record?.hatagHatagDate || "").trim(),
+    };
+
+    const existingPaid = Number(existing?.totalPaidAmount ?? existing?.paidAmount ?? 0);
+    const incomingPaid = Number(record?.totalPaidAmount ?? record?.paidAmount ?? 0);
+    if (incomingPaid > existingPaid) {
+      nextRecord.totalPaidAmount = incomingPaid;
+    }
+
+    const existingHistory = Array.isArray(existing?.paymentHistory) ? existing.paymentHistory : [];
+    const incomingHistory = Array.isArray(record?.paymentHistory) ? record.paymentHistory : [];
+    if (incomingHistory.length > existingHistory.length) {
+      nextRecord.paymentHistory = incomingHistory;
+    }
+
+    merged[existingIndex] = nextRecord;
   }
 
   return merged;
