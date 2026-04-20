@@ -6296,25 +6296,44 @@ window.addEventListener("storage", (event) => {
 renderRecords();
 initializeDatePickers();
 
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
+  // Restore login state from localStorage FIRST thing before any other checks
   restoreStoredLogins();
+  
+  // Double-check: explicitly restore if not in sessionStorage but in localStorage
+  const hasStoredMainLogin = localStorage.getItem(LOGIN_SESSION_KEY) === "1";
+  const hasStoredPortfolioLogin = localStorage.getItem(PORTFOLIO_SESSION_KEY) === "1";
+  if (hasStoredMainLogin && sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+  }
+  if (hasStoredPortfolioLogin && sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
+    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
+  }
+
   ensureSyncStatusElement();
+  
+  // Log authentication state for debugging
+  const isLoggedIn = hasStoredLogin(LOGIN_SESSION_KEY);
   console.info("[session][main] Startup", {
-    loggedIn: hasStoredLogin(LOGIN_SESSION_KEY),
+    loggedIn: isLoggedIn,
+    sessionStorage_mgi_logged_in: sessionStorage.getItem(LOGIN_SESSION_KEY),
+    localStorage_mgi_logged_in: localStorage.getItem(LOGIN_SESSION_KEY),
     online: navigator.onLine,
     userAgent: navigator.userAgent,
   });
 
   // Pull latest officer list and records from the database, then re-render
   renderOfficerSidebarLinks();
-  refreshOfficerNamesFromServer();
+  // IMPORTANT: Await officer names FIRST before loading records, so settled records can find all officer keys
+  await refreshOfficerNamesFromServer();
   loadRecordsFromServer().then(() => renderRecords());
 
-  if (hasStoredLogin(LOGIN_SESSION_KEY)) {
+  if (isLoggedIn) {
     hideLoadingScreen();
     return;
   }
 
+  // User is not logged in - show login form
   document.body.classList.add("login-locked");
 
   if (loginUsernameInput) {
