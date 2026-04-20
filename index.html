@@ -7,7 +7,10 @@
     <title>Morris Gilbert Inso - Credit Services</title>
     <script>
       // If portfolio user, redirect to portfolio page
-      if (sessionStorage.getItem("mgi_portfolio_logged_in") === "1") {
+      if (
+        sessionStorage.getItem("mgi_portfolio_logged_in") === "1"
+        || localStorage.getItem("mgi_portfolio_logged_in") === "1"
+      ) {
         window.location.href = "portfolio.html";
       }
     </script>

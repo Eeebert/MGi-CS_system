@@ -11,7 +11,10 @@
     <link rel="stylesheet" href="styles.css" />
     <script>
       // Check if portfolio user is logged in. If not, redirect to login page.
-      if (sessionStorage.getItem("mgi_portfolio_logged_in") !== "1") {
+      if (
+        sessionStorage.getItem("mgi_portfolio_logged_in") !== "1"
+        && localStorage.getItem("mgi_portfolio_logged_in") !== "1"
+      ) {
         window.location.href = "index.html";
       }
     </script>
@@ -219,6 +222,6 @@
 
     <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>
-    <script src="portfolio.js?v=20260420j"></script>
+    <script src="portfolio.js?v=20260420k"></script>
   </body>
 </html>

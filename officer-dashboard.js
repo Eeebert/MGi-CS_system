@@ -17,6 +17,21 @@ const OFFICER_VIEW_ACTIVE = "active";
 const OFFICER_VIEW_SETTLED = "settled";
 let currentOfficerView = OFFICER_VIEW_ACTIVE;
 
+function hasStoredLogin() {
+  return sessionStorage.getItem(LOGIN_SESSION_KEY) === "1" || localStorage.getItem(LOGIN_SESSION_KEY) === "1";
+}
+
+function restoreStoredLogin() {
+  if (localStorage.getItem(LOGIN_SESSION_KEY) === "1") {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+  }
+}
+
+function clearStoredLogin() {
+  sessionStorage.removeItem(LOGIN_SESSION_KEY);
+  localStorage.removeItem(LOGIN_SESSION_KEY);
+}
+
 const form = document.getElementById("loan-form");
 const message = document.getElementById("form-message");
 const body = document.getElementById("records-body");
@@ -4040,13 +4055,15 @@ drawerCloseBtn?.addEventListener("click", closeDrawer);
 drawerOverlay?.addEventListener("click", closeDrawer);
 
 drawerLogoutBtn?.addEventListener("click", () => {
-  sessionStorage.removeItem(LOGIN_SESSION_KEY);
+  clearStoredLogin();
   sessionStorage.clear();
   window.location.href = "index.html";
 });
 
 // Initialize on page load
-if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
+restoreStoredLogin();
+
+if (!hasStoredLogin()) {
   window.location.href = "index.html";
 } else {
   // Get officer name from URL parameter
@@ -4071,7 +4088,7 @@ if (sessionStorage.getItem(LOGIN_SESSION_KEY) !== "1") {
   refreshBackupHealthStatus();
   console.info("[session][officer] Startup", {
     officer: currentOfficer,
-    loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",
+    loggedIn: hasStoredLogin(),
     online: navigator.onLine,
     userAgent: navigator.userAgent,
   });

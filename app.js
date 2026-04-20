@@ -734,6 +734,36 @@ let syncDebugState = {
   guard: "no",
 };
 
+function hasStoredLogin(key) {
+  return sessionStorage.getItem(key) === "1" || localStorage.getItem(key) === "1";
+}
+
+function setStoredLogin(key, enabled) {
+  if (enabled) {
+    sessionStorage.setItem(key, "1");
+    localStorage.setItem(key, "1");
+    return;
+  }
+
+  sessionStorage.removeItem(key);
+  localStorage.removeItem(key);
+}
+
+function clearAllStoredLogins() {
+  setStoredLogin(LOGIN_SESSION_KEY, false);
+  setStoredLogin(PORTFOLIO_SESSION_KEY, false);
+}
+
+function restoreStoredLogins() {
+  if (localStorage.getItem(LOGIN_SESSION_KEY) === "1") {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
+  }
+
+  if (localStorage.getItem(PORTFOLIO_SESSION_KEY) === "1") {
+    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
+  }
+}
+
 function getDashboardViewFromLocation() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -6202,8 +6232,8 @@ loginForm?.addEventListener("submit", (event) => {
 
   const authType = authenticateUser(username, password);
   if (authType === "main") {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
-    sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+    setStoredLogin(LOGIN_SESSION_KEY, true);
+    setStoredLogin(PORTFOLIO_SESSION_KEY, false);
     setLoginMessage("Login successful.", true);
     hideLoadingScreen();
     updatePortfolioButtonVisibility();
@@ -6211,8 +6241,8 @@ loginForm?.addEventListener("submit", (event) => {
   }
 
   if (authType === "dashboard2") {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, "1");
-    sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+    setStoredLogin(LOGIN_SESSION_KEY, true);
+    setStoredLogin(PORTFOLIO_SESSION_KEY, false);
     if (isDashboard2Page()) {
       setLoginMessage("Login successful.", true);
       hideLoadingScreen();
@@ -6225,8 +6255,8 @@ loginForm?.addEventListener("submit", (event) => {
   }
   
   if (authType === "portfolio") {
-    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
-    sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    setStoredLogin(PORTFOLIO_SESSION_KEY, true);
+    setStoredLogin(LOGIN_SESSION_KEY, false);
     // Redirect to portfolio page immediately
     window.location.href = "portfolio.html";
     return;
@@ -6267,9 +6297,10 @@ renderRecords();
 initializeDatePickers();
 
 window.addEventListener("load", () => {
+  restoreStoredLogins();
   ensureSyncStatusElement();
   console.info("[session][main] Startup", {
-    loggedIn: sessionStorage.getItem(LOGIN_SESSION_KEY) === "1",
+    loggedIn: hasStoredLogin(LOGIN_SESSION_KEY),
     online: navigator.onLine,
     userAgent: navigator.userAgent,
   });
@@ -6279,7 +6310,7 @@ window.addEventListener("load", () => {
   refreshOfficerNamesFromServer();
   loadRecordsFromServer().then(() => renderRecords());
 
-  if (sessionStorage.getItem(LOGIN_SESSION_KEY) === "1") {
+  if (hasStoredLogin(LOGIN_SESSION_KEY)) {
     hideLoadingScreen();
     return;
   }

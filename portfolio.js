@@ -3,6 +3,21 @@ const LOGIN_SESSION_KEY = "mgi_logged_in";
 const PORTFOLIO_SESSION_KEY = "mgi_portfolio_logged_in";
 const THEME_KEY = "mgi_dashboard_theme";
 
+function hasStoredPortfolioLogin() {
+  return sessionStorage.getItem(PORTFOLIO_SESSION_KEY) === "1" || localStorage.getItem(PORTFOLIO_SESSION_KEY) === "1";
+}
+
+function restoreStoredPortfolioLogin() {
+  if (localStorage.getItem(PORTFOLIO_SESSION_KEY) === "1") {
+    sessionStorage.setItem(PORTFOLIO_SESSION_KEY, "1");
+  }
+}
+
+function clearStoredPortfolioLogin() {
+  sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+  localStorage.removeItem(PORTFOLIO_SESSION_KEY);
+}
+
 const portfolioTotal = document.getElementById("portfolio-total");
 const portfolioEarnedInterest = document.getElementById("portfolio-earned-interest");
 const portfolioTotalOutstanding = document.getElementById("portfolio-total-outstanding");
@@ -94,10 +109,9 @@ async function refreshOfficerNamesFromServer() {
   } catch { /* ignore */ }
   if (didUpdateOfficerNames) {
     buildOfficerCards();
-    if (didLoadServerRecords) {
-      renderPortfolio();
-    }
   }
+
+  return didUpdateOfficerNames;
 }
 
 let officerSummaryCards = [];
@@ -167,22 +181,7 @@ function getOfficerStorageKey(officerName) {
 }
 
 function getKnownOfficerNames() {
-  const names = new Set(OFFICER_NAMES);
-  try {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = String(localStorage.key(index) || "");
-      if (!key.startsWith(OFFICER_STORAGE_KEY_PREFIX)) {
-        continue;
-      }
-      const officerName = findOfficerName(key.slice(OFFICER_STORAGE_KEY_PREFIX.length).trim());
-      if (officerName) {
-        names.add(officerName);
-      }
-    }
-  } catch {
-    // Ignore localStorage access errors.
-  }
-  return Array.from(names);
+  return Array.from(new Set(OFFICER_NAMES));
 }
 
 function buildRecordFingerprint(record) {
@@ -238,34 +237,6 @@ function dedupeRecords(records) {
   }
 
   return merged;
-}
-
-function readCachedStateRecords(stateKey) {
-  try {
-    const raw = localStorage.getItem(stateKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function getLocalOfficerRecords() {
-  const merged = getKnownOfficerNames().flatMap((officerName) => {
-    const allRecords = getOfficerStorageKeys(officerName)
-      .flatMap((stateKey) => readCachedStateRecords(stateKey))
-      .filter((record) => {
-        const taggedOfficer = findOfficerName(record?.accountOfficer);
-        return taggedOfficer === "" || taggedOfficer === officerName;
-      })
-      .map((record) => ({
-        ...record,
-        accountOfficer: findOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
-      }));
-    return dedupeRecords(allRecords);
-  });
-
-  return dedupeRecords(merged);
 }
 
 async function loadStateRecords(stateKey, includeCacheBuster = true) {
@@ -332,27 +303,15 @@ async function fetchStateApi(stateKey, options, includeCacheBuster) {
 }
 
 function getRecords() {
-  if (didLoadServerRecords) {
-    return Array.isArray(recordsCache) ? recordsCache : [];
-  }
-
-  const localOfficerRecords = getLocalOfficerRecords();
-  const localGlobalRecords = readCachedStateRecords(STORAGE_KEY).filter(
-    (r) => !String(r?.accountOfficer || "").trim()
-  );
-  const merged = dedupeRecords([...localOfficerRecords, ...localGlobalRecords]);
-  return merged.length > 0 ? merged : localGlobalRecords;
+  return Array.isArray(recordsCache) ? recordsCache : [];
 }
 
 function getSettledDashboardParityRecords(sourceRecords) {
-  const mainRecords = (Array.isArray(sourceRecords) ? sourceRecords : []).filter(
-    (record) => !String(record?.accountOfficer || "").trim()
-  );
-  const localOfficerSettled = getLocalOfficerRecords().filter((record) => record?.isSettled === true);
-  return dedupeRecords([...mainRecords, ...localOfficerSettled]).filter((record) => record?.isSettled === true);
+  return (Array.isArray(sourceRecords) ? sourceRecords : []).filter((record) => record?.isSettled === true);
 }
 
 async function loadRecordsFromServer() {
+  await refreshOfficerNamesFromServer();
   const officerNames = getKnownOfficerNames();
 
   try {
@@ -382,21 +341,14 @@ async function loadRecordsFromServer() {
 
     const allRecords = dedupeRecords([...mergedOfficerRecords, ...cleanGlobalRecords]);
 
-    // Merge local cache so recent unsynced status flags (Write-Off/Hatag-Hatag)
-    // do not instantly disappear while background sync catches up.
-    const localOfficerRecords = getLocalOfficerRecords();
-    const localGlobalRecords = readCachedStateRecords(STORAGE_KEY).filter(
-      (r) => !String(r?.accountOfficer || "").trim()
-    );
-    recordsCache = dedupeRecords([...allRecords, ...localOfficerRecords, ...localGlobalRecords]);
+    recordsCache = allRecords;
     didLoadServerRecords = true;
     return;
   } catch {
-    // Keep local fallback only when server fetch throws at runtime.
+    recordsCache = [];
+    didLoadServerRecords = true;
+    return;
   }
-
-  recordsCache = getRecords();
-  didLoadServerRecords = true;
 }
 
 function formatCurrency(value) {
@@ -1264,7 +1216,7 @@ function closeLogoutConfirm() {
 
 function handleLogout() {
   closeLogoutConfirm();
-  sessionStorage.removeItem(PORTFOLIO_SESSION_KEY);
+  clearStoredPortfolioLogin();
   sessionStorage.clear();
   window.location.href = "index.html";
 }
@@ -1336,7 +1288,9 @@ themeOptions.forEach((option) => {
   });
 });
 
-if (sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
+restoreStoredPortfolioLogin();
+
+if (!hasStoredPortfolioLogin()) {
   window.location.href = "index.html";
 } else {
   initializeTheme();
@@ -1344,7 +1298,6 @@ if (sessionStorage.getItem(PORTFOLIO_SESSION_KEY) !== "1") {
     portfolioDateFilterInput.value = "";
   }
   buildOfficerCards();
-  refreshOfficerNamesFromServer();
   loadRecordsFromServer().then(() => renderPortfolio());
 }
 
