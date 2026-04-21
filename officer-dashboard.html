@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Morris Gilbert Inso - Officer Dashboard</title>
     <meta name="theme-color" content="#0f141a" />
+    <script>
+      // If officer user is already logged in (session only), prevent showing login form
+      // This prevents unnecessary login prompts when navigating between views
+      if (
+        sessionStorage.getItem("mgi_logged_in") === "1"
+      ) {
+        document.addEventListener("DOMContentLoaded", function() {
+          document.body.classList.remove("login-locked");
+        });
+      }
+    </script>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" href="images/loading_logo.png" />
     <link rel="apple-touch-icon" href="images/loading_logo.png" />

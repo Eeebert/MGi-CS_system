@@ -25,11 +25,13 @@ const portfolioMeta = document.getElementById("portfolio-meta");
 const portfolioCount = document.getElementById("portfolio-count");
 const portfolioPastDueCount = document.getElementById("portfolio-past-due-count");
 const portfolioPastDueBtn = document.getElementById("portfolio-past-due-btn");
+const pastDueBreakdown = document.getElementById("past-due-breakdown");
 const portfolioAverage = document.getElementById("portfolio-average");
 const releasedInterestBreakdown = document.getElementById("released-interest-breakdown");
 const showReleasedDataBtn = document.getElementById("show-released-data");
 const portfolioReleaseDataModal = document.getElementById("portfolio-release-data-modal");
 const portfolioReleaseDataCloseBtn = document.getElementById("portfolio-release-data-close");
+const portfolioReleaseDataExportBtn = document.getElementById("portfolio-release-data-export");
 const portfolioReleaseDataContent = document.getElementById("portfolio-release-data-content");
 const portfolioReleaseDataTitle = document.getElementById("portfolio-release-data-title");
 const portfolioReleaseDataSubtitle = portfolioReleaseDataModal?.querySelector(".payment-history-head p") || null;
@@ -64,6 +66,8 @@ const portfolioLogoutBtn = document.getElementById("portfolio-logout");
 const dailyPrincipalCollected = document.getElementById("daily-principal-collected");
 const dailyInterestCollected = document.getElementById("daily-interest-collected");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
+const DEFAULT_RELEASE_DATA_TITLE = "Released Loan Data";
+const DEFAULT_RELEASE_DATA_SUBTITLE = "Detailed list of Date, Released, Rate, and Interest.";
 let OFFICER_NAMES = (() => {
   try {
     const raw = localStorage.getItem("mgi_officer_names");
@@ -87,6 +91,9 @@ let typeDetailBuckets = {
   settled: [],
   pastDue: [],
 };
+let activePortfolioModalMode = "released";
+let releasedDataModalHtml = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
+let releasedDataModalSubtitle = DEFAULT_RELEASE_DATA_SUBTITLE;
 
 let OFFICER_SLUG_TO_NAME = OFFICER_NAMES.reduce((acc, name) => {
   acc[toOfficerSlug(name)] = name;
@@ -863,20 +870,17 @@ function openTypeDataModal(typeKey) {
   const typeLabel = getTypeDetailTitle(typeKey);
   const records = (typeDetailBuckets[typeKey] || []).slice();
 
-  if (portfolioReleaseDataTitle) {
-    portfolioReleaseDataTitle.textContent = `${typeLabel} Data`;
-  }
-
   if (!portfolioReleaseDataContent) {
     return;
   }
 
   if (records.length === 0) {
-    if (portfolioReleaseDataSubtitle) {
-      portfolioReleaseDataSubtitle.textContent = "No matching records for this type.";
-    }
-    portfolioReleaseDataContent.innerHTML = '<p class="empty" style="margin: 0;">No records found.</p>';
-    openReleaseDataModal();
+    openReleaseDataModal({
+      mode: typeKey,
+      title: `${typeLabel} Data`,
+      subtitle: "No matching records for this type.",
+      contentHtml: '<p class="empty" style="margin: 0;">No records found.</p>',
+    });
     return;
   }
 
@@ -888,9 +892,7 @@ function openTypeDataModal(typeKey) {
   const totalOutstanding = sorted.reduce((sum, record) => sum + Math.max(0, computeOutstandingBalance(record)), 0);
   const totalInterest = sorted.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
 
-  if (portfolioReleaseDataSubtitle) {
-    portfolioReleaseDataSubtitle.textContent = `Count: ${sorted.length} | Total Release: ${formatCurrency(totalRelease)} | Total Outstanding: ${formatCurrency(totalOutstanding)} | Total Interest: ${formatCurrency(totalInterest)}`;
-  }
+  const subtitle = `Count: ${sorted.length} | Total Release: ${formatCurrency(totalRelease)} | Total Outstanding: ${formatCurrency(totalOutstanding)} | Total Interest: ${formatCurrency(totalInterest)}`;
 
   const rows = sorted
     .map((record) => {
@@ -910,7 +912,7 @@ function openTypeDataModal(typeKey) {
     })
     .join("");
 
-  portfolioReleaseDataContent.innerHTML = `
+  const contentHtml = `
     <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem;">
       <thead>
         <tr>
@@ -924,10 +926,29 @@ function openTypeDataModal(typeKey) {
       <tbody>
         ${rows}
       </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Totals</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Released</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Outstanding</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Interest</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">Value</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalRelease)}</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalOutstanding)}</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalInterest)}</td>
+        </tr>
+      </tfoot>
     </table>
   `;
 
-  openReleaseDataModal();
+  openReleaseDataModal({
+    mode: typeKey,
+    title: `${typeLabel} Data`,
+    subtitle,
+    contentHtml,
+  });
 }
 
 function getOfficerNameFromRecord(record) {
@@ -1006,13 +1027,22 @@ function getPortfolioFilteredRecords(records) {
 }
 
 function renderReleasedInterestBreakdown(records) {
-  if (!releasedInterestBreakdown || !portfolioReleaseDataContent) {
+  if (!releasedInterestBreakdown) {
     return;
   }
 
   if (!records.length) {
     releasedInterestBreakdown.innerHTML = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
-    portfolioReleaseDataContent.innerHTML = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
+    releasedDataModalHtml = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
+    releasedDataModalSubtitle = DEFAULT_RELEASE_DATA_SUBTITLE;
+    if (portfolioReleaseDataModal?.classList.contains("show") && activePortfolioModalMode === "released") {
+      openReleaseDataModal({
+        mode: "released",
+        title: DEFAULT_RELEASE_DATA_TITLE,
+        subtitle: releasedDataModalSubtitle,
+        contentHtml: releasedDataModalHtml,
+      });
+    }
     if (showReleasedDataBtn) {
       showReleasedDataBtn.disabled = true;
     }
@@ -1022,6 +1052,10 @@ function renderReleasedInterestBreakdown(records) {
   const sortedRecords = records
     .slice()
     .sort((a, b) => String(b.dateGranted || "").localeCompare(String(a.dateGranted || "")))
+  const totalRelease = sortedRecords.reduce((sum, record) => {
+    const amount = Number(record.amount || 0);
+    return sum + amount;
+  }, 0);
   const totalInterest = sortedRecords.reduce((sum, record) => {
     const amount = Number(record.amount || 0);
     const rate = Number(record.interestRate || 0);
@@ -1059,7 +1093,9 @@ function renderReleasedInterestBreakdown(records) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Total Interest</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Total Release</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">${formatCurrency(totalRelease)}</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Total Interest</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">${formatCurrency(totalInterest)}</td>
         </tr>
       </tfoot>
@@ -1069,7 +1105,16 @@ function renderReleasedInterestBreakdown(records) {
   releasedInterestBreakdown.innerHTML = `
     <p style="margin: 0; font-size: 0.66rem;">Total Interest: <strong>${formatCurrency(totalInterest)}</strong></p>
   `;
-  portfolioReleaseDataContent.innerHTML = breakdownTableHtml;
+  releasedDataModalHtml = breakdownTableHtml;
+  releasedDataModalSubtitle = `Total Release: ${formatCurrency(totalRelease)} | Total Interest: ${formatCurrency(totalInterest)}`;
+  if (portfolioReleaseDataModal?.classList.contains("show") && activePortfolioModalMode === "released") {
+    openReleaseDataModal({
+      mode: "released",
+      title: DEFAULT_RELEASE_DATA_TITLE,
+      subtitle: releasedDataModalSubtitle,
+      contentHtml: releasedDataModalHtml,
+    });
+  }
   if (showReleasedDataBtn) {
     showReleasedDataBtn.disabled = false;
   }
@@ -1085,6 +1130,8 @@ function renderPortfolio() {
   const todayIso = new Date().toISOString().slice(0, 10);
   const pastDueRecords = activeRecords.filter((record) => isPastDueRecord(record, todayIso));
   const pastDueCount = pastDueRecords.length;
+  const pastDueTotalRelease = pastDueRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const pastDueTotalInterest = pastDueRecords.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
 
   if (portfolioTotal) {
     portfolioTotal.textContent = formatCurrency(totalReleased);
@@ -1106,6 +1153,11 @@ function renderPortfolio() {
   }
   if (portfolioPastDueBtn) {
     portfolioPastDueBtn.disabled = pastDueCount === 0;
+  }
+  if (pastDueBreakdown) {
+    pastDueBreakdown.innerHTML = pastDueCount === 0
+      ? '<p class="empty" style="margin: 0;">No past due loans.</p>'
+      : `<p style="margin: 0; font-size: 0.66rem;">Total Release: <strong>${formatCurrency(pastDueTotalRelease)}</strong></p><p style="margin: 2px 0 0 0; font-size: 0.66rem;">Total Interest: <strong>${formatCurrency(pastDueTotalInterest)}</strong></p>`;
   }
   if (portfolioAverage) {
     portfolioAverage.textContent = formatCurrency(totalReleased);
@@ -1188,20 +1240,98 @@ function closeDrawer() {
   portfolioHamburgerBtn?.classList.remove("is-open");
 }
 
-function openReleaseDataModal() {
+function openReleaseDataModal(config = null) {
+  const title = String(config?.title || DEFAULT_RELEASE_DATA_TITLE);
+  const subtitle = String(config?.subtitle || DEFAULT_RELEASE_DATA_SUBTITLE);
+  const contentHtml = typeof config?.contentHtml === "string" ? config.contentHtml : releasedDataModalHtml;
+
+  activePortfolioModalMode = String(config?.mode || "released");
+
   if (portfolioReleaseDataTitle) {
-    portfolioReleaseDataTitle.textContent = "Released Loan Data";
+    portfolioReleaseDataTitle.textContent = title;
   }
   if (portfolioReleaseDataSubtitle) {
-    portfolioReleaseDataSubtitle.textContent = "Detailed list of Date, Released, Rate, and Interest.";
+    portfolioReleaseDataSubtitle.textContent = subtitle;
+  }
+  if (portfolioReleaseDataContent) {
+    portfolioReleaseDataContent.innerHTML = contentHtml;
+  }
+  if (portfolioReleaseDataExportBtn) {
+    const hasTable = Boolean(portfolioReleaseDataContent?.querySelector("table"));
+    portfolioReleaseDataExportBtn.disabled = !hasTable;
   }
   portfolioReleaseDataModal?.classList.add("show");
   portfolioReleaseDataModal?.setAttribute("aria-hidden", "false");
 }
 
 function closeReleaseDataModal() {
+  activePortfolioModalMode = "released";
   portfolioReleaseDataModal?.classList.remove("show");
   portfolioReleaseDataModal?.setAttribute("aria-hidden", "true");
+}
+
+function toCsvCell(value) {
+  const text = String(value || "").replace(/\r?\n|\r/g, " ").trim();
+  const escaped = text.replace(/"/g, '""');
+  // Wrap as Excel text formula so values display exactly as exported.
+  return `"=""${escaped}"""`;
+}
+
+function exportPortfolioModalTableToExcel() {
+  const table = portfolioReleaseDataContent?.querySelector("table");
+  if (!table) {
+    return;
+  }
+
+  const rows = Array.from(table.querySelectorAll("tr"));
+  const maxColumns = rows.reduce((max, row) => {
+    const cells = Array.from(row.querySelectorAll("th, td"));
+    const rowColumns = cells.reduce((sum, cell) => {
+      const span = Number(cell.getAttribute("colspan") || 1);
+      return sum + (Number.isFinite(span) && span > 0 ? span : 1);
+    }, 0);
+    return Math.max(max, rowColumns);
+  }, 0);
+
+  const csvRows = rows.map((row) => {
+    const cells = Array.from(row.querySelectorAll("th, td"));
+    const expanded = [];
+    cells.forEach((cell) => {
+      const span = Number(cell.getAttribute("colspan") || 1);
+      const safeSpan = Number.isFinite(span) && span > 0 ? span : 1;
+      expanded.push(cell.textContent || "");
+      for (let i = 1; i < safeSpan; i += 1) {
+        expanded.push("");
+      }
+    });
+    while (expanded.length < maxColumns) {
+      expanded.push("");
+    }
+    return expanded.map((cellValue) => toCsvCell(cellValue)).join(",");
+  });
+
+  const titleRow = toCsvCell(portfolioReleaseDataTitle?.textContent || "Portfolio Data");
+  const subtitleRow = toCsvCell(portfolioReleaseDataSubtitle?.textContent || "");
+  const headerRows = [titleRow];
+  if (String(portfolioReleaseDataSubtitle?.textContent || "").trim()) {
+    headerRows.push(subtitleRow);
+  }
+
+  const csvContent = `\uFEFF${[...headerRows, "", ...csvRows].join("\n")}`;
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const title = String(portfolioReleaseDataTitle?.textContent || "portfolio_data")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const stamp = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `${title || "portfolio_data"}_${stamp}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function openLogoutConfirm() {
@@ -1260,6 +1390,7 @@ portfolioTypesGrid?.addEventListener("keydown", (event) => {
   openTypeDataModal(typeKey);
 });
 portfolioReleaseDataCloseBtn?.addEventListener("click", closeReleaseDataModal);
+portfolioReleaseDataExportBtn?.addEventListener("click", exportPortfolioModalTableToExcel);
 portfolioReleaseDataModal?.addEventListener("click", (event) => {
   if (event.target === portfolioReleaseDataModal) {
     closeReleaseDataModal();

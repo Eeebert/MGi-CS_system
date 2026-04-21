@@ -104,6 +104,9 @@
         <article class="portfolio-stat-card" style="padding: 8px;">
           <span class="portfolio-stat-label" style="font-size: 0.72rem;">Past Due</span>
           <strong id="portfolio-past-due-count" class="portfolio-stat-value" style="font-size: 1rem; color: #b42318;">0</strong>
+          <div id="past-due-breakdown" style="margin-top: 6px; font-size: 0.66rem; line-height: 1.3; max-height: 85px; overflow: auto;">
+            <p class="empty" style="margin: 0;">No past due loans.</p>
+          </div>
           <button id="portfolio-past-due-btn" type="button" class="btn-secondary" style="margin-top: 6px; width: 100%; font-size: 0.72rem; color: #b42318; font-weight: 700;">Show Past Due Data</button>
         </article>
       </section>
@@ -214,7 +217,10 @@
             <h3 id="portfolio-release-data-title">Released Loan Data</h3>
             <p>Detailed list of Date, Released, Rate, and Interest.</p>
           </div>
-          <button type="button" id="portfolio-release-data-close" class="btn-secondary">Close</button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" id="portfolio-release-data-export" class="btn-secondary">Export to Excel</button>
+            <button type="button" id="portfolio-release-data-close" class="btn-secondary">Close</button>
+          </div>
         </div>
         <div id="portfolio-release-data-content" class="payment-history-content"></div>
       </div>

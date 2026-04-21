@@ -974,7 +974,8 @@ async function syncRecordsToServer(records) {
       clearTimeout(pendingRetryTimer);
       pendingRetryTimer = null;
     }
-    setSyncStatus("ok", `saved (${records.length} records)`);
+    const activeSavedCount = (Array.isArray(records) ? records : []).filter((record) => record?.isSettled !== true).length;
+    setSyncStatus("ok", `saved (${activeSavedCount} records)`);
   } catch (error) {
     console.error("[sync][officer] Save failed", {
       officer: currentOfficer,
@@ -1073,7 +1074,8 @@ async function loadRecordsFromServer() {
       records: mergedPayload.length,
       sourceKeys: successfulResults.map((result) => result.key),
     });
-    setSyncStatus("ok", `updated (${mergedPayload.length} records)`);
+    const activeUpdatedCount = (Array.isArray(mergedPayload) ? mergedPayload : []).filter((record) => record?.isSettled !== true).length;
+    setSyncStatus("ok", `updated (${activeUpdatedCount} records)`);
   } catch {
     console.error("[sync][officer] Network error while fetching state", { officer: currentOfficer });
     const localRecords = readOfficerRecordsFromLocalStorage();

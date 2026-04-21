@@ -2754,7 +2754,6 @@ th {
   inset: 0;
   z-index: 1100;
   background: rgba(10, 28, 42, 0.55);
-  backdrop-filter: blur(2px);
   display: none;
   align-items: center;
   justify-content: center;
@@ -2763,21 +2762,6 @@ th {
 
 .dialog-backdrop.show {
   display: flex;
-}
-
-.dialog-backdrop.show .dialog-card {
-  animation: modalPop 180ms ease;
-}
-
-@keyframes modalPop {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .dialog-card {

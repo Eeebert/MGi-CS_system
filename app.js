@@ -3059,7 +3059,7 @@ async function getImageDataUrl(imagePath) {
   }
 }
 
-function getVisibleRecords(records) {
+function getVisibleRecords(records, fullRecords) {
   const nameFilter = (filterNameInput.value || "").trim().toLowerCase();
   const grantedFilter = normalizeDateSearchValue(getDateFilterValue(filterDateGrantedInput));
   const dueFilter = normalizeDateSearchValue(getDateFilterValue(filterDueDateInput));
@@ -3069,6 +3069,8 @@ function getVisibleRecords(records) {
 
   let rows = records
     .map((record, index) => {
+      const trueIndex = fullRecords ? fullRecords.indexOf(record) : -1;
+      const effectiveIndex = trueIndex >= 0 ? trueIndex : index;
       const dueDate = record.dueDate || computeDueDate(record.dateGranted, record.payableWithin);
       const effectiveDueDate = record.payDate || dueDate;
       const hasOutstandingBalance = getOutstandingBreakdown(record).outstandingBalance > 0;
@@ -3076,7 +3078,7 @@ function getVisibleRecords(records) {
       const daysPastDue = isPastDue
         ? Math.floor((new Date(`${referenceDateIso}T00:00:00`).getTime() - new Date(`${dueDate}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24))
         : 0;
-      return { record, index, dueDate, effectiveDueDate, isPastDue, daysPastDue };
+      return { record, index: effectiveIndex, dueDate, effectiveDueDate, isPastDue, daysPastDue };
     })
     .filter((row) => {
       if (isSettledDashboardView) {
@@ -4391,7 +4393,7 @@ function renderRecords() {
 
   const records = getRecords();
   const viewRecords = getRecordsForCurrentDashboardView(records);
-  const rows = getVisibleRecords(viewRecords);
+  const rows = getVisibleRecords(viewRecords, records);
   const activeFilters = getActiveFilterSnapshot();
   updateReleasedSummaryStats();
   console.debug("[render][main] Rendering records", {
@@ -4468,7 +4470,8 @@ function renderRecords() {
         const hatagHatagActive = isHatagHatagActive(record);
         const hatagHatagDate = String(record.hatagHatagDate || "").trim();
         const settledActive = isSettledRecord(record);
-        const isChecked = selectedSettledRecordFingerprints.has(buildRecordFingerprint(record));
+        const settledFingerprint = buildRecordFingerprint(record);
+        const isChecked = selectedSettledRecordFingerprints.has(settledFingerprint);
         const settledDate = String(record.settledDate || "").trim();
         const escapedRemarks = sanitize(record.remarks || "");
         const paymentCount = paymentHistory.length;
@@ -4579,7 +4582,7 @@ function renderRecords() {
           </div>
         </td>
         <td class="settled-select-cell">
-          ${settledActive ? `<label class="settled-select-control"><input type="checkbox" class="settled-record-checkbox" data-index="${index}" aria-label="Select settled account" ${isChecked ? "checked" : ""} /></label>` : ""}
+          ${settledActive ? `<label class="settled-select-control"><input type="checkbox" class="settled-record-checkbox" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}" aria-label="Select settled account" ${isChecked ? "checked" : ""} /></label>` : ""}
         </td>
       </tr>
     `;
@@ -4898,6 +4901,18 @@ body.addEventListener("change", (event) => {
   }
 
   if (target instanceof HTMLInputElement && target.classList.contains("settled-record-checkbox")) {
+    const encodedFingerprint = String(target.dataset.fingerprint || "").trim();
+    if (encodedFingerprint) {
+      const fingerprint = decodeURIComponent(encodedFingerprint);
+      if (target.checked) {
+        selectedSettledRecordFingerprints.add(fingerprint);
+      } else {
+        selectedSettledRecordFingerprints.delete(fingerprint);
+      }
+      updateSettledDeleteButtonState();
+      return;
+    }
+
     const rowIndex = Number(target.dataset.index);
     const records = getRecords();
     const record = records[rowIndex];
