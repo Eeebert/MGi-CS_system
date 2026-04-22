@@ -962,11 +962,7 @@ function openTypeDataModal(typeKey) {
 
 function getOfficerNameFromRecord(record) {
   const directName = findOfficerName(String(record?.accountOfficer || "").trim());
-  if (directName) {
-    return directName;
-  }
-  const fallbackName = findOfficerName(String(record?.officerName || record?.officer || "").trim());
-  return fallbackName;
+  return directName;
 }
 
 function renderOfficerCounts(records) {
