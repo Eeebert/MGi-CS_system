@@ -122,6 +122,7 @@ async function refreshOfficerNamesFromServer() {
 }
 
 let officerSummaryCards = [];
+let officerSummaryStats = new Map();
 
 function buildOfficerCards() {
   const grid = document.getElementById("portfolio-officers-grid");
@@ -329,16 +330,41 @@ async function loadRecordsFromServer() {
             const taggedOfficer = findOfficerName(record?.accountOfficer);
             return taggedOfficer === "" || taggedOfficer === officerName;
           });
-          return mergedOfficerPayload.map((record) => ({
+          const normalizedRecords = mergedOfficerPayload.map((record) => ({
             ...record,
             accountOfficer: findOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
           }));
+          return {
+            officerName,
+            records: normalizedRecords,
+          };
         }))
       ),
       loadStateRecords(STORAGE_KEY),
     ]);
 
-    const mergedOfficerRecords = dedupeRecords(officerPayloads.flat());
+    const nextOfficerSummaryStats = new Map();
+    officerPayloads.forEach((entry) => {
+      const officerName = String(entry?.officerName || "").trim();
+      const records = Array.isArray(entry?.records) ? entry.records : [];
+      if (!officerName) {
+        return;
+      }
+
+      const stats = records.reduce((acc, record) => {
+        const isSettled = record?.isSettled === true;
+        if (!isSettled) {
+          acc.activeCount += 1;
+          acc.balance += Math.max(0, computeOutstandingBalance(record));
+        }
+        return acc;
+      }, { balance: 0, activeCount: 0 });
+
+      nextOfficerSummaryStats.set(officerName, stats);
+    });
+    officerSummaryStats = nextOfficerSummaryStats;
+
+    const mergedOfficerRecords = dedupeRecords(officerPayloads.flatMap((entry) => (Array.isArray(entry?.records) ? entry.records : [])));
 
     // Global records from the main dashboard have no accountOfficer — exclude any
     // that were previously contaminated (officer records leaked into the global key).
@@ -353,6 +379,7 @@ async function loadRecordsFromServer() {
     return;
   } catch {
     recordsCache = [];
+    officerSummaryStats = new Map();
     didLoadServerRecords = true;
     return;
   }
@@ -1009,22 +1036,7 @@ function getOfficerNameFromRecord(record) {
 }
 
 function renderOfficerCounts(records) {
-  const statsByOfficer = new Map();
-
-  records.forEach((record) => {
-    const officerName = getOfficerNameFromRecord(record);
-    if (!officerName) {
-      return;
-    }
-    const outstanding = computeOutstandingBalance(record);
-    const prev = statsByOfficer.get(officerName) || { balance: 0, activeCount: 0 };
-    const nextBalance = prev.balance + Math.max(0, outstanding);
-    const nextActiveCount = record?.isSettled !== true ? prev.activeCount + 1 : prev.activeCount;
-    statsByOfficer.set(officerName, {
-      balance: nextBalance,
-      activeCount: nextActiveCount,
-    });
-  });
+  const statsByOfficer = officerSummaryStats instanceof Map ? officerSummaryStats : new Map();
 
   const ranked = Array.from(statsByOfficer.entries())
     .sort((a, b) => b[1].balance - a[1].balance);
