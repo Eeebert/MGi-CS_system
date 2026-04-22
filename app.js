@@ -5131,8 +5131,9 @@ body.addEventListener("click", async (event) => {
   const payPrincipalOnlyBtn = event.target.closest(".pay-principal-only-btn");
   if (payPrincipalOnlyBtn) {
     const encodedFingerprint = payPrincipalOnlyBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5166,8 +5167,9 @@ body.addEventListener("click", async (event) => {
   const saveRebateBtn = event.target.closest(".save-rebate-btn");
   if (saveRebateBtn) {
     const encodedFingerprint = saveRebateBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5500,8 +5502,9 @@ body.addEventListener("click", async (event) => {
   const showPaymentHistoryBtn = event.target.closest(".show-payment-history-btn");
   if (showPaymentHistoryBtn) {
     const encodedFingerprint = showPaymentHistoryBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5515,8 +5518,9 @@ body.addEventListener("click", async (event) => {
   const statementBtn = event.target.closest(".statement-btn");
   if (statementBtn) {
     const encodedFingerprint = statementBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5528,8 +5532,9 @@ body.addEventListener("click", async (event) => {
   const writeOffBtn = event.target.closest(".write-off-btn");
   if (writeOffBtn) {
     const encodedFingerprint = writeOffBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5568,8 +5573,9 @@ body.addEventListener("click", async (event) => {
   const hatagHatagBtn = event.target.closest(".hatag-hatag-btn");
   if (hatagHatagBtn) {
     const encodedFingerprint = hatagHatagBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5608,8 +5614,9 @@ body.addEventListener("click", async (event) => {
   const settleBtn = event.target.closest(".settle-btn");
   if (settleBtn) {
     const encodedFingerprint = settleBtn.dataset.fingerprint;
-    const records = getRecords();
-    const record = findRecordByFingerprint(records, encodedFingerprint);
+    const allRecords = getRecords();
+    const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+    const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5658,8 +5665,9 @@ body.addEventListener("click", async (event) => {
   }
 
   const encodedFingerprint = button.dataset.fingerprint;
-  const records = getRecords();
-  const record = findRecordByFingerprint(records, encodedFingerprint);
+  const allRecords = getRecords();
+  const viewRecords = getRecordsForCurrentDashboardView(allRecords);
+  const record = findRecordByFingerprint(viewRecords, encodedFingerprint);
   if (!record) {
     showMessage("Record no longer exists.", "error");
     return;
