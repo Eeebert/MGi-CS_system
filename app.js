@@ -705,6 +705,7 @@ let restoreAuthPasswordResolver = null;
 let editRecordResolver = null;
 let deletePaymentConfirmResolver = null;
 let paymentEntryRowIndex = -1;
+let paymentEntryRecord = null;
 let paymentHistoryRowIndex = -1;
 let pendingPaymentConfirm = null;
 const PAYMENT_MODE_STANDARD = "standard";
@@ -888,6 +889,19 @@ function buildRecordFingerprint(record) {
     String(record?.address || "").trim().toUpperCase(),
     String(record?.contactNumber || "").trim(),
   ].join("|");
+}
+
+function findRecordByFingerprint(records, encodedFingerprint) {
+  if (!encodedFingerprint || !Array.isArray(records)) {
+    return null;
+  }
+  const targetFingerprint = decodeURIComponent(String(encodedFingerprint));
+  for (const record of records) {
+    if (buildRecordFingerprint(record) === targetFingerprint) {
+      return record;
+    }
+  }
+  return null;
 }
 
 function dedupeRecords(records) {
@@ -4286,6 +4300,7 @@ function closePaymentEntryModal() {
   paymentEntryModal.classList.remove("show");
   paymentEntryModal.setAttribute("aria-hidden", "true");
   paymentEntryRowIndex = -1;
+  paymentEntryRecord = null;
   paymentEntryMode = PAYMENT_MODE_STANDARD;
 
   if (paymentEntryInput) {
@@ -4351,7 +4366,7 @@ function updatePaymentEntryPreview() {
   }
 
   const records = getRecords();
-  const record = records[paymentEntryRowIndex];
+  let record = paymentEntryRecord || (paymentEntryRowIndex >= 0 ? records[paymentEntryRowIndex] : null);
   if (!record) {
     paymentEntryPreview.textContent = `Applied: Interest ${formatCurrency(0)} | Principal ${formatCurrency(0)}`;
     return;
@@ -4362,15 +4377,35 @@ function updatePaymentEntryPreview() {
   paymentEntryPreview.textContent = `Applied: Interest ${formatCurrency(allocation.interestPaid)} | Principal ${formatCurrency(allocation.principalPaid)}`;
 }
 
-function openPaymentEntryModal(rowIndex, record, mode = PAYMENT_MODE_STANDARD) {
+function openPaymentEntryModal(rowIndexOrRecord, recordOrMode, mode = PAYMENT_MODE_STANDARD) {
   if (!paymentEntryModal || !paymentEntryInput) {
     return;
   }
 
+  // Handle both old signature (rowIndex, record, mode) and new signature (record, mode)
+  let rowIndex = -1;
+  let record = null;
+  let paymentMode = PAYMENT_MODE_STANDARD;
+
+  if (typeof rowIndexOrRecord === "number") {
+    // Old signature: openPaymentEntryModal(rowIndex, record, mode)
+    rowIndex = rowIndexOrRecord;
+    record = recordOrMode;
+    paymentMode = mode;
+  } else {
+    // New signature: openPaymentEntryModal(record, mode)
+    record = rowIndexOrRecord;
+    paymentMode = recordOrMode;
+    // Try to find the row index for the record
+    const records = getRecords();
+    rowIndex = records.indexOf(record);
+  }
+
   paymentEntryRowIndex = rowIndex;
-  paymentEntryMode = mode;
-  if (paymentEntrySubtitle) {
-    paymentEntrySubtitle.textContent = `Borrower: ${record.name} | Mode: ${getPaymentModeLabel(mode)}`;
+  paymentEntryRecord = record;
+  paymentEntryMode = paymentMode;
+  if (paymentEntrySubtitle && record) {
+    paymentEntrySubtitle.textContent = `Borrower: ${record.name} | Mode: ${getPaymentModeLabel(paymentMode)}`;
   }
   paymentEntryInput.value = "";
   if (paymentEntryError) {
@@ -4564,21 +4599,21 @@ function renderRecords() {
           <span class="outstanding-balance-value">${formatCurrency(paymentBreakdown.outstandingBalance)}</span>
           <small class="mini-note">Interest: ${formatCurrency(paymentBreakdown.interestOutstanding)}</small>
           ${rebateDisplayAmount > 0 ? `<small class="mini-note rebate-note">Rebate: ${formatCurrency(rebateDisplayAmount)}</small>` : ""}
-          ${settledActive ? "" : `<div class="outstanding-btn-row"><button type="button" class="btn-secondary rebate-display-btn" data-index="${index}">Rebate</button><button type="button" class="pay-principal-only-btn" data-index="${index}" ${paymentBreakdown.principalOutstanding <= 0 || hatagHatagActive ? "disabled" : ""}>Pay Principal Only</button></div>`}
-          ${settledActive ? "" : `<div class="paid-controls rebate-editor ${openRebateEditorRowIndex === index ? "" : "rebate-editor-hidden"}" data-index="${index}"><input type="text" class="rebate-input" data-index="${index}" value="${addCommas(formatPlainAmount(rebateAmount))}" inputmode="decimal" autocomplete="off" /><button type="button" class="btn-secondary save-rebate-btn" data-index="${index}">Save</button></div>`}
+          ${settledActive ? "" : `<div class="outstanding-btn-row"><button type="button" class="btn-secondary rebate-display-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}">Rebate</button><button type="button" class="pay-principal-only-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}" ${paymentBreakdown.principalOutstanding <= 0 || hatagHatagActive ? "disabled" : ""}>Pay Principal Only</button></div>`}
+          ${settledActive ? "" : `<div class="paid-controls rebate-editor ${openRebateEditorRowIndex === index ? "" : "rebate-editor-hidden"}" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}"><input type="text" class="rebate-input" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}" value="${addCommas(formatPlainAmount(rebateAmount))}" inputmode="decimal" autocomplete="off" /><button type="button" class="btn-secondary save-rebate-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}">Save</button></div>`}
         </td>
         <td>
           <div class="remarks-controls">
-            ${settledActive ? "" : `<button type="button" class="btn-pay save-paid-btn" data-index="${index}">Pay</button>`}
-            <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
-            <button type="button" class="btn-secondary statement-btn" data-index="${index}">Statement of Account</button>
-            ${settledActive ? "" : `<button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${
+            ${settledActive ? "" : `<button type="button" class="btn-pay save-paid-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}">Pay</button>`}
+            <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}">Show Payment History</button>
+            <button type="button" class="btn-secondary statement-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}">Statement of Account</button>
+            ${settledActive ? "" : `<button type="button" class="btn-danger write-off-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${
               isWriteOffActive ? "Write-Off Active" : "Write-Off"
             }</button>`}
-            ${settledActive ? "" : `<button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${
+            ${settledActive ? "" : `<button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${
               hatagHatagActive ? "Hatag-Hatag Active" : "Hatag-Hatag"
             }</button>`}
-            ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}">Settle</button>`}
+            ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}" data-fingerprint="${encodeURIComponent(settledFingerprint)}">Settle</button>`}
           </div>
         </td>
         <td class="settled-select-cell">
@@ -5080,23 +5115,24 @@ body.addEventListener("click", async (event) => {
 
   const rebateDisplayBtn = event.target.closest(".rebate-display-btn");
   if (rebateDisplayBtn) {
-    const rowIndex = Number(rebateDisplayBtn.dataset.index);
-    if (Number.isInteger(rowIndex)) {
-      toggleRebateEditor(rowIndex);
+    const encodedFingerprint = rebateDisplayBtn.dataset.fingerprint;
+    const records = getRecords();
+    const record = findRecordByFingerprint(records, encodedFingerprint);
+    if (record) {
+      // Find index for toggle function compatibility
+      const rowIndex = records.indexOf(record);
+      if (Number.isInteger(rowIndex)) {
+        toggleRebateEditor(rowIndex);
+      }
     }
     return;
   }
 
   const payPrincipalOnlyBtn = event.target.closest(".pay-principal-only-btn");
   if (payPrincipalOnlyBtn) {
-    const rowIndex = Number(payPrincipalOnlyBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
-
+    const encodedFingerprint = payPrincipalOnlyBtn.dataset.fingerprint;
     const records = getRecords();
-    const record = records[rowIndex];
+    const record = findRecordByFingerprint(records, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5112,7 +5148,7 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    openPaymentEntryModal(rowIndex, record, PAYMENT_MODE_PRINCIPAL_ONLY);
+    openPaymentEntryModal(record, PAYMENT_MODE_PRINCIPAL_ONLY);
     return;
   }
 
@@ -5129,37 +5165,35 @@ body.addEventListener("click", async (event) => {
 
   const saveRebateBtn = event.target.closest(".save-rebate-btn");
   if (saveRebateBtn) {
-    const rowIndex = Number(saveRebateBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
+    const encodedFingerprint = saveRebateBtn.dataset.fingerprint;
+    const records = getRecords();
+    const record = findRecordByFingerprint(records, encodedFingerprint);
+    if (!record) {
+      showMessage("Record no longer exists.", "error");
       return;
     }
 
-    const rebateInputEl = body.querySelector(`.rebate-input[data-index="${rowIndex}"]`);
+    // Find the rebate input for this record
+    const container = saveRebateBtn.closest('[data-fingerprint]') || saveRebateBtn.closest('.paid-controls');
+    const rebateInputEl = container?.querySelector('.rebate-input');
     const updatedRebate = parseAmount(rebateInputEl instanceof HTMLInputElement ? rebateInputEl.value : "0");
     if (!Number.isFinite(updatedRebate) || updatedRebate < 0) {
       showMessage("Rebate cannot be negative.", "error");
       return;
     }
 
-    const records = getRecords();
-    if (!records[rowIndex]) {
-      showMessage("Record no longer exists.", "error");
-      return;
-    }
-
-    const maxRebate = Math.max(0, computeRemainingPayable(records[rowIndex]));
+    const maxRebate = Math.max(0, computeRemainingPayable(record));
     if (updatedRebate > maxRebate) {
       showMessage("Rebate cannot exceed the raw outstanding balance.", "error");
       return;
     }
 
-    const previousRebate = getRebateAmount(records[rowIndex]);
-    records[rowIndex].manualRebateAmount = updatedRebate;
+    const previousRebate = getRebateAmount(record);
+    record.manualRebateAmount = updatedRebate;
     const rebateChanged = Math.abs(updatedRebate - previousRebate) > 0.0001;
     if (rebateChanged && updatedRebate > 0) {
-      const rebateApplied = Math.max(0, getOutstandingBreakdown(records[rowIndex]).rebateAmount);
-      const history = getPaymentHistory(records[rowIndex]);
+      const rebateApplied = Math.max(0, getOutstandingBreakdown(record).rebateAmount);
+      const history = getPaymentHistory(record);
       history.unshift({
         date: toIsoDate(getReferenceDate()),
         amount: updatedRebate,
@@ -5169,12 +5203,13 @@ body.addEventListener("click", async (event) => {
         rebateApplied,
         isRebateOnly: true,
       });
-      records[rowIndex].paymentHistory = history;
+      record.paymentHistory = history;
     }
     setRecords(records);
     renderRecords();
     showMessage("Rebate updated.", "success");
     showToast("Rebate updated", "success");
+    const rowIndex = records.indexOf(record);
     toggleRebateEditor(rowIndex, false);
     return;
   }
@@ -5464,60 +5499,48 @@ body.addEventListener("click", async (event) => {
 
   const showPaymentHistoryBtn = event.target.closest(".show-payment-history-btn");
   if (showPaymentHistoryBtn) {
-    const rowIndex = Number(showPaymentHistoryBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
-
+    const encodedFingerprint = showPaymentHistoryBtn.dataset.fingerprint;
     const records = getRecords();
-    const record = records[rowIndex];
+    const record = findRecordByFingerprint(records, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
     }
 
     const paymentHistory = getPaymentHistory(record);
-    openPaymentHistoryModal(record, paymentHistory, rowIndex);
+    openPaymentHistoryModal(record, paymentHistory);
     return;
   }
 
   const statementBtn = event.target.closest(".statement-btn");
   if (statementBtn) {
-    const rowIndex = Number(statementBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
+    const encodedFingerprint = statementBtn.dataset.fingerprint;
     const records = getRecords();
-    if (!records[rowIndex]) {
+    const record = findRecordByFingerprint(records, encodedFingerprint);
+    if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
     }
-    exportStatementOfAccount(records[rowIndex]);
+    exportStatementOfAccount(record);
     return;
   }
 
   const writeOffBtn = event.target.closest(".write-off-btn");
   if (writeOffBtn) {
-    const rowIndex = Number(writeOffBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
-
+    const encodedFingerprint = writeOffBtn.dataset.fingerprint;
     const records = getRecords();
-    if (!records[rowIndex]) {
+    const record = findRecordByFingerprint(records, encodedFingerprint);
+    if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
     }
 
-    if (records[rowIndex].isWriteOff === true) {
+    if (record.isWriteOff === true) {
       showMessage("Write-Off is already active for this record.", "success");
       return;
     }
 
-    if (isHatagHatagActive(records[rowIndex])) {
+    if (isHatagHatagActive(record)) {
       showMessage("Hatag-Hatag is already active for this record.", "error");
       return;
     }
@@ -5533,8 +5556,8 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    records[rowIndex].isWriteOff = true;
-    records[rowIndex].writeOffDate = toIsoDate(getReferenceDate());
+    record.isWriteOff = true;
+    record.writeOffDate = toIsoDate(getReferenceDate());
     setRecords(records);
     renderRecords();
     showMessage("Write-Off activated. Interest growth is now stopped for this account.", "success");
@@ -5544,24 +5567,20 @@ body.addEventListener("click", async (event) => {
 
   const hatagHatagBtn = event.target.closest(".hatag-hatag-btn");
   if (hatagHatagBtn) {
-    const rowIndex = Number(hatagHatagBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
-
+    const encodedFingerprint = hatagHatagBtn.dataset.fingerprint;
     const records = getRecords();
-    if (!records[rowIndex]) {
+    const record = findRecordByFingerprint(records, encodedFingerprint);
+    if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
     }
 
-    if (isHatagHatagActive(records[rowIndex])) {
+    if (isHatagHatagActive(record)) {
       showMessage("Hatag-Hatag is already active for this record.", "success");
       return;
     }
 
-    if (records[rowIndex].isWriteOff === true) {
+    if (record.isWriteOff === true) {
       showMessage("Write-Off is already active for this record.", "error");
       return;
     }
@@ -5577,8 +5596,8 @@ body.addEventListener("click", async (event) => {
       return;
     }
 
-    records[rowIndex].isHatagHatag = true;
-    records[rowIndex].hatagHatagDate = toIsoDate(getReferenceDate());
+    record.isHatagHatag = true;
+    record.hatagHatagDate = toIsoDate(getReferenceDate());
     setRecords(records);
     renderRecords();
     showMessage("Hatag-Hatag activated. Interest growth is stopped and payments are logged in history only.", "success");
@@ -5588,14 +5607,9 @@ body.addEventListener("click", async (event) => {
 
   const settleBtn = event.target.closest(".settle-btn");
   if (settleBtn) {
-    const rowIndex = Number(settleBtn.dataset.index);
-    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-      showMessage("Invalid record selected.", "error");
-      return;
-    }
-
+    const encodedFingerprint = settleBtn.dataset.fingerprint;
     const records = getRecords();
-    const record = records[rowIndex];
+    const record = findRecordByFingerprint(records, encodedFingerprint);
     if (!record) {
       showMessage("Record no longer exists.", "error");
       return;
@@ -5643,20 +5657,15 @@ body.addEventListener("click", async (event) => {
     return;
   }
 
-  const rowIndex = Number(button.dataset.index);
-  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-    showMessage("Invalid record selected.", "error");
-    return;
-  }
-
+  const encodedFingerprint = button.dataset.fingerprint;
   const records = getRecords();
-  const record = records[rowIndex];
+  const record = findRecordByFingerprint(records, encodedFingerprint);
   if (!record) {
     showMessage("Record no longer exists.", "error");
     return;
   }
 
-  openPaymentEntryModal(rowIndex, record, PAYMENT_MODE_STANDARD);
+  openPaymentEntryModal(record, PAYMENT_MODE_STANDARD);
   return;
 });
 
@@ -5793,19 +5802,25 @@ paymentEntryModal?.addEventListener("click", (event) => {
 });
 
 paymentEntryConfirmBtn?.addEventListener("click", () => {
-  const rowIndex = paymentEntryRowIndex;
   const amount = parseAmount(paymentEntryInput?.value || "0");
-
-  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-    if (paymentEntryError) {
-      paymentEntryError.textContent = "Invalid record selected.";
-    }
-    return;
-  }
 
   if (!Number.isFinite(amount) || amount <= 0) {
     if (paymentEntryError) {
       paymentEntryError.textContent = "Enter a paid amount greater than 0.";
+    }
+    return;
+  }
+
+  let rowIndex = paymentEntryRowIndex;
+  if (paymentEntryRecord) {
+    // If we have a record reference, find its current index
+    const records = getRecords();
+    rowIndex = records.indexOf(paymentEntryRecord);
+  }
+
+  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+    if (paymentEntryError) {
+      paymentEntryError.textContent = "Invalid record selected.";
     }
     return;
   }
