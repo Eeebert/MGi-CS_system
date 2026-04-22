@@ -899,7 +899,7 @@ async function loadOfficerServerRecords(stateKeys) {
 }
 
 function getRecords() {
-  return Array.isArray(recordsCache) ? recordsCache : [];
+  return (Array.isArray(recordsCache) ? recordsCache : []).filter((record) => record && typeof record === "object");
 }
 
 function mirrorOfficerRecordsToLocalStorage(records) {
@@ -933,11 +933,11 @@ function readOfficerRecordsFromLocalStorage() {
 }
 
 function setRecords(records) {
-  recordsCache = Array.isArray(records) ? records : [];
+  recordsCache = (Array.isArray(records) ? records : []).filter((record) => record && typeof record === "object");
   mirrorOfficerRecordsToLocalStorage(recordsCache);
   lastLocalMutationAt = Date.now();
   hasUnsyncedLocalChanges = true;
-  syncRecordsToServer(records);
+  syncRecordsToServer(recordsCache);
 }
 
 function schedulePendingSaveRetry() {
