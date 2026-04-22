@@ -328,7 +328,7 @@ async function loadRecordsFromServer() {
         officerNames.map((officerName) => Promise.all(getOfficerStorageKeys(officerName).map((stateKey) => loadStateRecords(stateKey))).then((payloads) => {
           const mergedOfficerPayload = dedupeRecords(payloads.flat()).filter((record) => {
             const taggedOfficer = findOfficerName(record?.accountOfficer);
-            return taggedOfficer === "" || taggedOfficer === officerName;
+            return taggedOfficer === officerName;
           });
           const normalizedRecords = mergedOfficerPayload.map((record) => ({
             ...record,
