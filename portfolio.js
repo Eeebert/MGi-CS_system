@@ -600,14 +600,20 @@ function computeOutstandingBalance(record) {
 }
 
 function isPastDueRecord(record, todayIso) {
-  const dueDate = String(record?.dueDate || "").trim();
-  if (!dueDate) {
+  if (record?.isSettled === true || isWriteOffActive(record) || isHatagHatagActive(record)) {
+    return false;
+  }
+
+  const effectiveDueDate = String(
+    record?.payDate || record?.dueDate || computeDueDate(record?.dateGranted, record?.payableWithin) || ""
+  ).trim();
+  if (!effectiveDueDate) {
     return false;
   }
   if (computeOutstandingBalance(record) <= 0) {
     return false;
   }
-  return dueDate < todayIso;
+  return effectiveDueDate < todayIso;
 }
 
 function computeEarnedInterest(record) {
@@ -897,6 +903,7 @@ function openTypeDataModal(typeKey) {
   const rows = sorted
     .map((record) => {
       const borrowerName = String(record?.name || "-");
+      const officerName = getOfficerNameFromRecord(record) || "-";
       const dateLabel = formatLongDate(record.dateGranted) || "-";
       const released = Number(record.amount || 0);
       const outstanding = Math.max(0, computeOutstandingBalance(record));
@@ -904,6 +911,7 @@ function openTypeDataModal(typeKey) {
 
       return `<tr>
         <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12);">${borrowerName}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); white-space: nowrap;">${officerName}</td>
         <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); white-space: nowrap;">${dateLabel}</td>
         <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); text-align: right; white-space: nowrap;">${formatCurrency(released)}</td>
         <td style="padding: 4px 6px; border-bottom: 1px dashed rgba(0,0,0,0.12); text-align: right; white-space: nowrap;">${formatCurrency(outstanding)}</td>
@@ -917,6 +925,7 @@ function openTypeDataModal(typeKey) {
       <thead>
         <tr>
           <th style="text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Borrower</th>
+          <th style="text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Account Officer</th>
           <th style="text-align: left; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Date</th>
           <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Released</th>
           <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.2);">Outstanding</th>
@@ -928,13 +937,13 @@ function openTypeDataModal(typeKey) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="2" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Totals</td>
+          <td colspan="3" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Totals</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Released</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Outstanding</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Interest</td>
         </tr>
         <tr>
-          <td colspan="2" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">Value</td>
+          <td colspan="3" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">Value</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalRelease)}</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalOutstanding)}</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalInterest)}</td>
@@ -969,12 +978,12 @@ function renderOfficerCounts(records) {
       return;
     }
     const outstanding = computeOutstandingBalance(record);
-    const prev = statsByOfficer.get(officerName) || { balance: 0, openCount: 0 };
+    const prev = statsByOfficer.get(officerName) || { balance: 0, activeCount: 0 };
     const nextBalance = prev.balance + Math.max(0, outstanding);
-    const nextOpenCount = outstanding > 0 ? prev.openCount + 1 : prev.openCount;
+    const nextActiveCount = record?.isSettled !== true ? prev.activeCount + 1 : prev.activeCount;
     statsByOfficer.set(officerName, {
       balance: nextBalance,
-      openCount: nextOpenCount,
+      activeCount: nextActiveCount,
     });
   });
 
@@ -990,20 +999,20 @@ function renderOfficerCounts(records) {
       if (displayRows.length >= cardCount || usedNames.has(name)) {
         return;
       }
-      displayRows.push([name, statsByOfficer.get(name) || { balance: 0, openCount: 0 }]);
+      displayRows.push([name, statsByOfficer.get(name) || { balance: 0, activeCount: 0 }]);
       usedNames.add(name);
     });
   }
 
   officerSummaryCards.forEach((card, index) => {
-    const [name, stats] = displayRows[index] || [card.fallbackName, { balance: 0, openCount: 0 }];
-    const openCount = Number(stats?.openCount || 0);
+    const [name, stats] = displayRows[index] || [card.fallbackName, { balance: 0, activeCount: 0 }];
+    const activeCount = Number(stats?.activeCount || 0);
     const balance = Number(stats?.balance || 0);
     if (card.labelEl) {
       card.labelEl.textContent = name;
     }
     if (card.metaEl) {
-      card.metaEl.textContent = `${openCount} open account${openCount === 1 ? "" : "s"}`;
+      card.metaEl.textContent = `${activeCount} total loan${activeCount === 1 ? "" : "s"}`;
     }
     if (card.valueEl) {
       card.valueEl.textContent = formatCurrency(balance);

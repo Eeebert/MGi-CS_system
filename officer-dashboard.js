@@ -99,6 +99,8 @@ const backupStatusNote = document.getElementById("backup-status-note");
 const themeOptions = document.querySelectorAll('input[name="theme-choice"]');
 const dashboardTotalLoans = document.getElementById("dashboard-total-loans");
 const dashboardTotalAmount = document.getElementById("dashboard-total-amount");
+const dashboardTotalOutstanding = document.getElementById("dashboard-total-outstanding");
+const dashboardPastDueCount = document.getElementById("dashboard-past-due-count");
 const API_FALLBACK_ORIGIN = "https://mgi-cs-system.onrender.com";
 const OFFICER_NAMES_FALLBACK = ["JunJun", "Aga", "Jomar", "James", "Jambi", "Maria Joy"];
 let OFFICER_NAMES = (() => {
@@ -1433,7 +1435,9 @@ function computeBaseCollectibleAmount(record) {
 
 function computeCollectibleAmount(record) {
   const baseCollectible = computeBaseCollectibleAmount(record);
-  return baseCollectible + computeArrearsAmount(record) + computeOtherArrearsAmount(record);
+  const arrearsForCollectible = record?.arrearsType === "Principal" ? computeArrearsAmount(record) : 0;
+  const otherArrearsForCollectible = record?.otherArrearsType === "Principal" ? computeOtherArrearsAmount(record) : 0;
+  return baseCollectible + arrearsForCollectible + otherArrearsForCollectible;
 }
 
 function computeArrearsAmount(record) {
@@ -1450,6 +1454,20 @@ function computeOtherArrearsAmount(record) {
     return 0;
   }
   return otherArrears;
+}
+
+function isPastDueOfficerRecord(record) {
+  if (!record || record?.isSettled === true) {
+    return false;
+  }
+
+  const referenceIso = toIsoDate(getReferenceDate());
+  const effectiveDueDate = String(record?.payDate || record?.dueDate || computeDueDate(record?.dateGranted, record?.payableWithin) || "").trim();
+  if (!effectiveDueDate) {
+    return false;
+  }
+
+  return getOutstandingBreakdown(record).outstandingBalance > 0 && effectiveDueDate < referenceIso;
 }
 
 function getCollectibleLabelForRecord(record) {
@@ -1639,12 +1657,23 @@ function updateDashboardStats() {
   const records = getRecords().filter((record) => record?.isSettled !== true);
   const totalLoans = records.length;
   const totalAmount = records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const totalOutstanding = records.reduce(
+    (sum, record) => sum + Number(getOutstandingBreakdown(record).outstandingBalance || 0),
+    0
+  );
+  const pastDueCount = records.filter((record) => isPastDueOfficerRecord(record)).length;
   
   if (dashboardTotalLoans) {
     dashboardTotalLoans.textContent = String(totalLoans);
   }
   if (dashboardTotalAmount) {
     dashboardTotalAmount.textContent = formatCurrency(totalAmount);
+  }
+  if (dashboardTotalOutstanding) {
+    dashboardTotalOutstanding.textContent = formatCurrency(totalOutstanding);
+  }
+  if (dashboardPastDueCount) {
+    dashboardPastDueCount.textContent = String(pastDueCount);
   }
 }
 
@@ -1684,6 +1713,7 @@ function renderRecords() {
     .map(({ record, index }) => {
       const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
       const payDate = String(record.payDate || dueDate);
+      const isPastDue = isPastDueOfficerRecord(record);
       const collectibleAmount = computeCollectibleAmount(record);
       const arrearsAmount = computeArrearsAmount(record);
       const otherArrearsAmount = computeOtherArrearsAmount(record);
@@ -1708,7 +1738,7 @@ function renderRecords() {
         ? getAmountDraftForRecord(record, otherArrearsInputDrafts, otherArrearsAmount)
         : formatAmountInputOrBlank(otherArrearsAmount);
       return `
-        <tr>
+        <tr class="${isPastDue ? "past-due-row" : ""}">
           <td>
             <div class="borrower-name-row">
               <div class="borrower-name">${sanitize(String(record.name || ""))}</div>
