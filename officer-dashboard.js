@@ -1457,17 +1457,17 @@ function computeOtherArrearsAmount(record) {
 }
 
 function isPastDueOfficerRecord(record) {
-  if (!record || record?.isSettled === true) {
+  if (!record || record?.isSettled === true || record?.isWriteOff === true || isHatagHatagActive(record)) {
     return false;
   }
 
   const referenceIso = toIsoDate(getReferenceDate());
-  const effectiveDueDate = String(record?.payDate || record?.dueDate || computeDueDate(record?.dateGranted, record?.payableWithin) || "").trim();
+  const effectiveDueDate = String(record?.dueDate || computeDueDate(record?.dateGranted, record?.payableWithin) || "").trim();
   if (!effectiveDueDate) {
     return false;
   }
 
-  return getOutstandingBreakdown(record).outstandingBalance > 0 && effectiveDueDate < referenceIso;
+  return computeRemainingPayable(record) > 0 && effectiveDueDate < referenceIso;
 }
 
 function getCollectibleLabelForRecord(record) {
