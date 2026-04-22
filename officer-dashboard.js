@@ -838,6 +838,21 @@ function buildRecordFingerprint(record) {
   ].join("|");
 }
 
+function resolveRecordIndexFromAction(actionElement) {
+  const rowIndex = Number(actionElement?.dataset?.index);
+  const fingerprint = String(actionElement?.dataset?.fingerprint || "").trim();
+  const records = getRecords();
+
+  if (fingerprint) {
+    const matchedIndex = records.findIndex((record) => buildRecordFingerprint(record) === fingerprint);
+    if (matchedIndex >= 0) {
+      return matchedIndex;
+    }
+  }
+
+  return Number.isInteger(rowIndex) && rowIndex >= 0 ? rowIndex : -1;
+}
+
 function dedupeRecords(records) {
   const seen = new Set();
   const merged = [];
@@ -1711,6 +1726,7 @@ function renderRecords() {
 
   body.innerHTML = filtered
     .map(({ record, index }) => {
+      const recordFingerprint = buildRecordFingerprint(record);
       const dueDate = String(record.dueDate || computeDueDate(record.dateGranted, record.payableWithin));
       const payDate = String(record.payDate || dueDate);
       const isPastDue = isPastDueOfficerRecord(record);
@@ -1808,13 +1824,13 @@ function renderRecords() {
           <td>
             <div class="remarks-controls">
               ${settledActive ? "" : `<button type="button" class="btn-pay pay-loan-btn" data-index="${index}">Pay</button>`}
-              <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}">Show Payment History</button>
+              <button type="button" class="btn-secondary show-payment-history-btn" data-index="${index}" data-fingerprint="${sanitize(recordFingerprint)}">Show Payment History</button>
               <button type="button" class="btn-secondary open-remarks-btn" data-index="${index}">Remarks: ${escapedRemarks || "-"}</button>
               <div class="remarks-editor ${openRemarksEditorRowIndex === index ? "" : "remarks-editor-hidden"}" data-index="${index}">
                 <input type="text" class="remarks-input" data-index="${index}" value="${escapedRemarks}" placeholder="Add remarks..." autocomplete="off" />
                 <button type="button" class="btn-secondary save-remarks-btn" data-index="${index}">Save</button>
               </div>
-              <button type="button" class="statement-btn" data-index="${index}">Statement of Account</button>
+              <button type="button" class="statement-btn" data-index="${index}" data-fingerprint="${sanitize(recordFingerprint)}">Statement of Account</button>
               ${settledActive ? "" : `<button type="button" class="btn-danger write-off-btn" data-index="${index}" ${isWriteOffActive || hatagHatagActive ? "disabled" : ""}>${isWriteOffActive ? "Write-Off Active" : "Write-Off"}</button>`}
               ${settledActive ? "" : `<button type="button" class="btn-hatag-hatag hatag-hatag-btn" data-index="${index}" ${hatagHatagActive || isWriteOffActive ? "disabled" : ""}>${hatagHatagActive ? "Hatag-Hatag Active" : "Hatag-Hatag"}</button>`}
               ${settledActive ? "" : `<button type="button" class="btn-secondary settle-btn" data-index="${index}">Settle</button>`}
@@ -3601,7 +3617,7 @@ body?.addEventListener("click", async (event) => {
 
   const showPaymentHistoryBtn = event.target.closest(".show-payment-history-btn");
   if (showPaymentHistoryBtn) {
-    const rowIndex = Number(showPaymentHistoryBtn.dataset.index);
+    const rowIndex = resolveRecordIndexFromAction(showPaymentHistoryBtn);
     if (!Number.isInteger(rowIndex) || rowIndex < 0) {
       showMessage("Unable to show payment history.", "error");
       return;
@@ -3620,7 +3636,7 @@ body?.addEventListener("click", async (event) => {
 
   const statementBtn = event.target.closest(".statement-btn");
   if (statementBtn) {
-    const rowIndex = Number(statementBtn.dataset.index);
+    const rowIndex = resolveRecordIndexFromAction(statementBtn);
     if (!Number.isInteger(rowIndex) || rowIndex < 0) {
       showMessage("Unable to export statement.", "error");
       return;
