@@ -485,6 +485,45 @@ function getPaymentHistory(record) {
   return [];
 }
 
+function getTotalPaidAmount(record) {
+  const totalPaid = Number(record?.totalPaidAmount ?? record?.paidAmount ?? 0);
+  if (!Number.isFinite(totalPaid) || totalPaid < 0) {
+    return 0;
+  }
+  return totalPaid;
+}
+
+function getTotalInterestReducedAmount(record) {
+  const history = getPaymentHistory(record);
+  if (history.length === 0) {
+    return 0;
+  }
+
+  return history.reduce((sum, item) => {
+    const interestReduced = Number(item?.interestReduced || 0);
+    if (!Number.isFinite(interestReduced) || interestReduced <= 0) {
+      return sum;
+    }
+    return sum + interestReduced;
+  }, 0);
+}
+
+function getEffectiveInterestRate(record) {
+  if (record?.payableWithin === "monthly_60_fixed") {
+    return 10;
+  }
+  return Number(record?.interestRate || 0);
+}
+
+function computeBaseTotalPayable(record) {
+  const effectiveInterestRate = getEffectiveInterestRate(record);
+  const monthlyInterestAmount = Number(record?.amount || 0) * (effectiveInterestRate / 100);
+  if (record?.payableWithin === "monthly_60_fixed") {
+    return Number(record?.amount || 0) + monthlyInterestAmount * 2;
+  }
+  return Number(record?.amount || 0) + monthlyInterestAmount;
+}
+
 function diffDays(fromDate, toDate) {
   const msPerDay = 24 * 60 * 60 * 1000;
   const from = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
@@ -529,7 +568,7 @@ function compareIsoDate(a, b) {
 }
 
 function getWeeklyRunningState(record, referenceDate = new Date()) {
-  const effectiveInterestRate = Number(record.interestRate || 0) / 100;
+  const effectiveInterestRate = getEffectiveInterestRate(record) / 100;
   const periodsFromDate = record.payableWithin === "emergency_fixed"
     ? getEmergencyFixedInterestPeriodsFromDate
     : getWeeklyInterestPeriodsFromDate;
@@ -555,11 +594,17 @@ function getWeeklyRunningState(record, referenceDate = new Date()) {
     outstandingBalance += principalBalance * effectiveInterestRate * cyclesSince;
 
     const amountPaid = Math.max(0, Number(item.amount || 0));
+    const storedInterestPaid = Math.max(0, Number(item.interestPaid || 0));
+    const storedPrincipalPaid = Math.max(0, Number(item.principalPaid || 0));
     const interestOutstanding = Math.max(0, outstandingBalance - principalBalance);
-    const interestPaid = Math.min(amountPaid, interestOutstanding);
-    const principalPaid = Math.min(principalBalance, Math.max(0, amountPaid - interestPaid));
+    const interestPaid = Math.min(interestOutstanding, storedInterestPaid || Math.min(amountPaid, interestOutstanding));
+    const principalPaid = Math.min(
+      principalBalance,
+      storedPrincipalPaid || Math.max(0, Math.min(amountPaid, outstandingBalance) - interestPaid)
+    );
+    const interestReduced = Math.max(0, Number(item.interestReduced || 0));
 
-    outstandingBalance = Math.max(0, outstandingBalance - amountPaid);
+    outstandingBalance = Math.max(0, outstandingBalance - amountPaid - interestReduced);
     principalBalance = Math.max(0, principalBalance - principalPaid);
     lastCycle = paymentCycles;
   }
@@ -580,23 +625,21 @@ function computeOutstandingBalance(record) {
     return 0;
   }
 
-  // For weekly loans (Emergency Loan, etc.), use the running balance calculation
+  if (isHatagHatagActive(record)) {
+    const snapshot = Number(record?.hatagHatagOutstanding);
+    if (Number.isFinite(snapshot) && snapshot >= 0) {
+      return snapshot;
+    }
+  }
+
   if (isWeeklyFixedLoan(record.payableWithin)) {
     return getWeeklyRunningState(record).outstandingBalance;
   }
-  
-  // Keep Monthly 60-day fixed loan math consistent with Officer Dashboard.
-  const amount = Number(record.amount || 0);
-  const interestRate = record.payableWithin === "monthly_60_fixed"
-    ? 10
-    : Number(record.interestRate || 0);
-  const monthlyInterestAmount = amount * (interestRate / 100);
-  const totalPayable = record.payableWithin === "monthly_60_fixed"
-    ? amount + monthlyInterestAmount * 2
-    : amount + monthlyInterestAmount;
-  const totalPaid = Number(record.totalPaidAmount ?? record.paidAmount ?? 0);
-  
-  return Math.max(0, totalPayable - totalPaid);
+
+  const grossPayable = computeBaseTotalPayable(record);
+  const totalPaid = getTotalPaidAmount(record);
+  const totalInterestReduced = getTotalInterestReducedAmount(record);
+  return Math.max(0, grossPayable - totalPaid - totalInterestReduced);
 }
 
 function isPastDueRecord(record, todayIso) {
