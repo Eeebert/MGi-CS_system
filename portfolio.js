@@ -91,6 +91,8 @@ let typeDetailBuckets = {
   settled: [],
   pastDue: [],
 };
+let officerPastDueRecords = [];
+let mainDashboardPastDueRecords = [];
 let activePortfolioModalMode = "released";
 let releasedDataModalHtml = '<p class="empty" style="margin: 0;">No released loans yet.</p>';
 let releasedDataModalSubtitle = DEFAULT_RELEASE_DATA_SUBTITLE;
@@ -114,37 +116,10 @@ async function refreshOfficerNamesFromServer() {
       didUpdateOfficerNames = true;
     }
   } catch { /* ignore */ }
-  if (didUpdateOfficerNames) {
-    buildOfficerCards();
-  }
-
   return didUpdateOfficerNames;
 }
 
-let officerSummaryCards = [];
 let officerSummaryStats = new Map();
-
-function buildOfficerCards() {
-  const grid = document.getElementById("portfolio-officers-grid");
-  if (!grid) return;
-  grid.innerHTML = OFFICER_NAMES.map((name) => {
-    const slug = toOfficerSlug(name);
-    return `<article class="portfolio-type-card" style="padding: 7px;">
-            <span class="portfolio-type-label" style="font-size: 0.72rem;">${name}</span>
-            <strong id="officer-count-${slug}" class="portfolio-type-value" style="font-size: 0.98rem;">0</strong>
-            <p style="font-size: 0.66rem; margin: 3px 0 0 0; opacity: 0.7; color: #666;">outstanding balance</p>
-          </article>`;
-  }).join("\n          ");
-  officerSummaryCards = OFFICER_NAMES.map((name) => {
-    const valueEl = document.getElementById(`officer-count-${toOfficerSlug(name)}`);
-    return {
-      fallbackName: name,
-      valueEl,
-      labelEl: valueEl?.closest("article")?.querySelector(".portfolio-type-label") || null,
-      metaEl: valueEl?.closest("article")?.querySelector("p") || null,
-    };
-  });
-}
 
 function toOfficerSlug(name) {
   return String(name || "")
@@ -247,6 +222,22 @@ function dedupeRecords(records) {
   return merged;
 }
 
+function dedupeRecordsForOfficerDashboardParity(records) {
+  const seen = new Set();
+  const merged = [];
+
+  for (const record of Array.isArray(records) ? records : []) {
+    const fingerprint = buildRecordFingerprint(record);
+    if (seen.has(fingerprint)) {
+      continue;
+    }
+    seen.add(fingerprint);
+    merged.push(record);
+  }
+
+  return merged;
+}
+
 async function loadStateRecords(stateKey, includeCacheBuster = true) {
   try {
     const res = await fetchStateApi(
@@ -265,6 +256,75 @@ async function loadStateRecords(stateKey, includeCacheBuster = true) {
 
     const data = await res.json().catch(() => null);
     return Array.isArray(data?.payload) ? data.payload : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadOfficerServerRecords(stateKeys) {
+  const keys = Array.isArray(stateKeys) ? stateKeys : [];
+
+  return Promise.all(
+    keys.map(async (stateKey) => {
+      try {
+        const res = await fetchStateApi(stateKey, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, max-age=0",
+            Pragma: "no-cache",
+          },
+        }, true);
+
+        if (!res.ok) {
+          return { key: stateKey, ok: false, status: res.status, records: [] };
+        }
+
+        const data = await res.json().catch(() => null);
+        if (Array.isArray(data?.payload)) {
+          return { key: stateKey, ok: true, status: res.status, records: data.payload };
+        }
+
+        if (data?.payload === null) {
+          return { key: stateKey, ok: true, status: res.status, records: [] };
+        }
+
+        return { key: stateKey, ok: false, status: res.status, records: [] };
+      } catch {
+        return { key: stateKey, ok: false, status: null, records: [] };
+      }
+    })
+  );
+}
+
+function readOfficerRecordsFromLocalStorage(officerName) {
+  try {
+    for (const key of getOfficerStorageKeys(officerName)) {
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        continue;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function readGlobalRecordsFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -325,20 +385,51 @@ async function loadRecordsFromServer() {
   try {
     const [officerPayloads, globalRecords] = await Promise.all([
       Promise.all(
-        officerNames.map((officerName) => Promise.all(getOfficerStorageKeys(officerName).map((stateKey) => loadStateRecords(stateKey))).then((payloads) => {
-          const mergedOfficerPayload = dedupeRecords(payloads.flat()).filter((record) => {
-            const taggedOfficer = findOfficerName(record?.accountOfficer);
-            return taggedOfficer === officerName;
+        officerNames.map((officerName) => {
+          const allKeys = getOfficerStorageKeys(officerName);
+          const canonicalKey = allKeys[0];
+          return loadOfficerServerRecords(allKeys).then((results) => {
+            const successfulResults = results.filter((result) => result.ok);
+            const localFallbackRecords = readOfficerRecordsFromLocalStorage(officerName);
+            const canonicalServerRecords = successfulResults.find((result) => result.key === canonicalKey)?.records || [];
+            const canonicalRecords = canonicalServerRecords.length > 0
+              ? canonicalServerRecords
+              : localFallbackRecords;
+            const allKeyPayloads = successfulResults.length > 0
+              ? successfulResults.map((result) => result.records)
+              : [localFallbackRecords];
+
+            const canonicalFiltered = dedupeRecords(canonicalRecords).filter((record) => {
+              const tagged = findOfficerName(record?.accountOfficer);
+              return tagged === "" || tagged === officerName;
+            }).map((record) => ({
+              ...record,
+              accountOfficer: officerName,
+            }));
+
+            const parityStatsRecords = dedupeRecordsForOfficerDashboardParity(allKeyPayloads.flat()).filter((record) => {
+              const taggedOfficer = findOfficerName(record?.accountOfficer);
+              return taggedOfficer === "" || taggedOfficer === officerName;
+            }).map((record) => ({
+              ...record,
+              accountOfficer: officerName,
+            }));
+
+            const mergedOfficerPayload = dedupeRecords(allKeyPayloads.flat()).filter((record) => {
+              const taggedOfficer = findOfficerName(record?.accountOfficer);
+              return taggedOfficer === "" || taggedOfficer === officerName;
+            });
+            const normalizedRecords = mergedOfficerPayload.map((record) => ({
+              ...record,
+              accountOfficer: findOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
+            }));
+            return {
+              officerName,
+              records: normalizedRecords,
+              canonicalRecords: parityStatsRecords.length > 0 ? parityStatsRecords : canonicalFiltered,
+            };
           });
-          const normalizedRecords = mergedOfficerPayload.map((record) => ({
-            ...record,
-            accountOfficer: findOfficerName(String(record?.accountOfficer || "").trim()) || officerName,
-          }));
-          return {
-            officerName,
-            records: normalizedRecords,
-          };
-        }))
+        })
       ),
       loadStateRecords(STORAGE_KEY),
     ]);
@@ -346,23 +437,44 @@ async function loadRecordsFromServer() {
     const nextOfficerSummaryStats = new Map();
     officerPayloads.forEach((entry) => {
       const officerName = String(entry?.officerName || "").trim();
-      const records = Array.isArray(entry?.records) ? entry.records : [];
+      const records = Array.isArray(entry?.canonicalRecords) ? entry.canonicalRecords : [];
       if (!officerName) {
         return;
       }
 
+      const todayIsoForStats = toIsoDate(new Date());
       const stats = records.reduce((acc, record) => {
         const isSettled = record?.isSettled === true;
         if (!isSettled) {
           acc.activeCount += 1;
           acc.balance += Math.max(0, computeOutstandingBalance(record));
+          acc.totalAmount += Number(record?.amount || 0);
+          // Use dueDate only (not payDate) to match officer dashboard past-due logic.
+          // payDate is the "Move Pay Date" collection schedule which is unrelated to
+          // whether a loan is contractually past its due date.
+          if (isPastDueByDueDate(record, todayIsoForStats)) {
+            acc.pastDueCount += 1;
+          }
         }
         return acc;
-      }, { balance: 0, activeCount: 0 });
+      }, { balance: 0, activeCount: 0, totalAmount: 0, pastDueCount: 0 });
 
       nextOfficerSummaryStats.set(officerName, stats);
     });
     officerSummaryStats = nextOfficerSummaryStats;
+    officerPastDueRecords = officerPayloads.flatMap((entry) => {
+      const records = Array.isArray(entry?.canonicalRecords) ? entry.canonicalRecords : [];
+      return records.filter((record) => isPastDueByDueDate(record, toIsoDate(new Date())));
+    });
+    const rawGlobalRecords = dedupeRecordsForOfficerDashboardParity([
+      ...(Array.isArray(globalRecords) ? globalRecords : []),
+      ...readGlobalRecordsFromLocalStorage(),
+    ]);
+    mainDashboardPastDueRecords = dedupeRecordsForOfficerDashboardParity(
+      rawGlobalRecords.filter((record) =>
+        isMainDashboardPastDueRecord(record, toIsoDate(new Date()))
+      )
+    );
 
     const mergedOfficerRecords = dedupeRecords(officerPayloads.flatMap((entry) => (Array.isArray(entry?.records) ? entry.records : [])));
 
@@ -380,6 +492,8 @@ async function loadRecordsFromServer() {
   } catch {
     recordsCache = [];
     officerSummaryStats = new Map();
+    officerPastDueRecords = [];
+    mainDashboardPastDueRecords = [];
     didLoadServerRecords = true;
     return;
   }
@@ -390,6 +504,15 @@ function formatCurrency(value) {
     style: "currency",
     currency: "PHP",
   }).format(value || 0);
+}
+
+function formatCurrencyRoundedUp(value) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.ceil(Number(value) || 0));
 }
 
 function formatLongDate(isoDate) {
@@ -442,6 +565,13 @@ function formatMonthLabel(monthKey) {
   ];
 
   return `${monthNames[month - 1]} ${year}`;
+}
+
+function toIsoDate(dateValue) {
+  const y = dateValue.getFullYear();
+  const m = String(dateValue.getMonth() + 1).padStart(2, "0");
+  const d = String(dateValue.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function isWriteOffActive(record) {
@@ -667,6 +797,39 @@ function computeOutstandingBalance(record) {
   const totalPaid = getTotalPaidAmount(record);
   const totalInterestReduced = getTotalInterestReducedAmount(record);
   return Math.max(0, grossPayable - totalPaid - totalInterestReduced);
+}
+
+// Uses only dueDate (not payDate) — matches officer dashboard logic.
+function isPastDueByDueDate(record, todayIso) {
+  if (record?.isSettled === true || isWriteOffActive(record) || isHatagHatagActive(record)) {
+    return false;
+  }
+
+  const effectiveDueDate = String(
+    record?.dueDate || computeDueDate(record?.dateGranted, record?.payableWithin) || ""
+  ).trim();
+  if (!effectiveDueDate) {
+    return false;
+  }
+  if (computeOutstandingBalance(record) <= 0) {
+    return false;
+  }
+  return effectiveDueDate < todayIso;
+}
+
+function isMainDashboardPastDueRecord(record, todayIso) {
+  if (record?.isSettled === true) {
+    return false;
+  }
+
+  const dueDate = String(
+    record?.dueDate || computeDueDate(record?.dateGranted, record?.payableWithin) || ""
+  ).trim();
+  if (!dueDate) {
+    return false;
+  }
+
+  return computeOutstandingBalance(record) > 0 && compareIsoDate(dueDate, todayIso) < 0;
 }
 
 function isPastDueRecord(record, todayIso) {
@@ -967,8 +1130,11 @@ function openTypeDataModal(typeKey) {
   const totalRelease = sorted.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   const totalOutstanding = sorted.reduce((sum, record) => sum + Math.max(0, computeOutstandingBalance(record)), 0);
   const totalInterest = sorted.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
+  const hideInterest = typeKey === "pastDue";
 
-  const subtitle = `Count: ${sorted.length} | Total Release: ${formatCurrency(totalRelease)} | Total Outstanding: ${formatCurrency(totalOutstanding)} | Total Interest: ${formatCurrency(totalInterest)}`;
+  const subtitle = hideInterest
+    ? `Count: ${sorted.length} | Total Release: ${formatCurrency(totalRelease)} | Total Outstanding: ${formatCurrency(totalOutstanding)}`
+    : `Count: ${sorted.length} | Total Release: ${formatCurrency(totalRelease)} | Total Outstanding: ${formatCurrency(totalOutstanding)} | Total Interest: ${formatCurrency(totalInterest)}`;
 
   const rows = sorted
     .map((record) => {
@@ -1010,13 +1176,13 @@ function openTypeDataModal(typeKey) {
           <td colspan="3" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Totals</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Released</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Outstanding</td>
-          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">Interest</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.2);">${hideInterest ? "Status" : "Interest"}</td>
         </tr>
         <tr>
           <td colspan="3" style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">Value</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalRelease)}</td>
           <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalOutstanding)}</td>
-          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${formatCurrency(totalInterest)}</td>
+          <td style="padding: 6px; text-align: right; font-weight: 700; border-top: 1px solid rgba(0,0,0,0.12);">${hideInterest ? "-" : formatCurrency(totalInterest)}</td>
         </tr>
       </tfoot>
     </table>
@@ -1035,40 +1201,60 @@ function getOfficerNameFromRecord(record) {
   return directName;
 }
 
-function renderOfficerCounts(records) {
-  const statsByOfficer = officerSummaryStats instanceof Map ? officerSummaryStats : new Map();
-
-  const ranked = Array.from(statsByOfficer.entries())
-    .sort((a, b) => b[1].balance - a[1].balance);
-
-  const cardCount = officerSummaryCards.length;
-  const displayRows = ranked.slice(0, cardCount);
-
-  if (displayRows.length < cardCount) {
-    const usedNames = new Set(displayRows.map(([name]) => name));
-    OFFICER_NAMES.forEach((name) => {
-      if (displayRows.length >= cardCount || usedNames.has(name)) {
-        return;
-      }
-      displayRows.push([name, statsByOfficer.get(name) || { balance: 0, activeCount: 0 }]);
-      usedNames.add(name);
-    });
+function renderOfficerDashboards() {
+  const grid = document.getElementById("officer-dashboards-grid");
+  if (!grid) {
+    return;
   }
 
-  officerSummaryCards.forEach((card, index) => {
-    const [name, stats] = displayRows[index] || [card.fallbackName, { balance: 0, activeCount: 0 }];
-    const activeCount = Number(stats?.activeCount || 0);
-    const balance = Number(stats?.balance || 0);
-    if (card.labelEl) {
-      card.labelEl.textContent = name;
-    }
-    if (card.metaEl) {
-      card.metaEl.textContent = `${activeCount} total loan${activeCount === 1 ? "" : "s"}`;
-    }
-    if (card.valueEl) {
-      card.valueEl.textContent = formatCurrency(balance);
-    }
-  });
+  const statsByOfficer = officerSummaryStats instanceof Map ? officerSummaryStats : new Map();
+
+  const officers = OFFICER_NAMES.filter((name) => statsByOfficer.has(name) || true);
+
+  if (officers.length === 0) {
+    grid.innerHTML = '<p class="empty" style="margin: 0; font-size: 0.72rem;">No officer data yet.</p>';
+    return;
+  }
+
+  grid.innerHTML = officers.map((name) => {
+    const stats = statsByOfficer.get(name) || { balance: 0, activeCount: 0, totalAmount: 0, pastDueCount: 0 };
+    const activeCount = Number(stats.activeCount || 0);
+    const balance = Number(stats.balance || 0);
+    const totalAmount = Number(stats.totalAmount || 0);
+    const pastDueCount = Number(stats.pastDueCount || 0);
+    const slug = toOfficerSlug(name);
+    const initials = name.split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2).toUpperCase();
+    const pastDueClass = pastDueCount > 0 ? " officer-dash-stat__value--alert" : "";
+
+    return `
+      <article class="officer-dash-card" id="officer-dashboard-card-${slug}">
+        <div class="officer-dash-card__header">
+          <div class="officer-dash-card__avatar" aria-hidden="true">${initials}</div>
+          <div>
+            <div class="officer-dash-card__name">${name}</div>
+            <div class="officer-dash-card__subtitle">Account Dashboard</div>
+          </div>
+        </div>
+        <hr class="officer-dash-divider" />
+        <div class="officer-dash-card__body">
+          <div class="officer-dash-stat">
+            <span class="officer-dash-stat__label">Total Loans Released</span>
+            <span class="officer-dash-stat__value">${activeCount}</span>
+            <span class="officer-dash-stat__sub">loan${activeCount === 1 ? "" : "s"}</span>
+          </div>
+          <div class="officer-dash-stat">
+            <span class="officer-dash-stat__label">Total Outstanding Balance</span>
+            <span class="officer-dash-stat__value">${formatCurrencyRoundedUp(balance)}</span>
+          </div>
+          <div class="officer-dash-stat">
+            <span class="officer-dash-stat__label">Past Due Accounts</span>
+            <span class="officer-dash-stat__value${pastDueClass}">${pastDueCount}</span>
+            <span class="officer-dash-stat__sub">account${pastDueCount === 1 ? "" : "s"}</span>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
 
 function getPortfolioFilteredRecords(records) {
@@ -1187,8 +1373,12 @@ function renderPortfolio() {
   const totalReleased = activeRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   const totalEarnedInterest = activeRecords.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
   const totalOutstanding = activeRecords.reduce((sum, record) => sum + computeOutstandingBalance(record), 0);
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const pastDueRecords = activeRecords.filter((record) => isPastDueRecord(record, todayIso));
+  const filteredMainDashboardPastDueRecords = getPortfolioFilteredRecords(mainDashboardPastDueRecords);
+  const combinedPastDueRecords = dedupeRecordsForOfficerDashboardParity([
+    ...(Array.isArray(officerPastDueRecords) ? officerPastDueRecords : []),
+    ...filteredMainDashboardPastDueRecords,
+  ]);
+  const pastDueRecords = combinedPastDueRecords;
   const pastDueCount = pastDueRecords.length;
   const pastDueTotalRelease = pastDueRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0);
   const pastDueTotalInterest = pastDueRecords.reduce((sum, record) => sum + computeEarnedInterest(record), 0);
@@ -1217,7 +1407,7 @@ function renderPortfolio() {
   if (pastDueBreakdown) {
     pastDueBreakdown.innerHTML = pastDueCount === 0
       ? '<p class="empty" style="margin: 0;">No past due loans.</p>'
-      : `<p style="margin: 0; font-size: 0.66rem;">Total Release: <strong>${formatCurrency(pastDueTotalRelease)}</strong></p><p style="margin: 2px 0 0 0; font-size: 0.66rem;">Total Interest: <strong>${formatCurrency(pastDueTotalInterest)}</strong></p>`;
+      : `<p style="margin: 0; font-size: 0.66rem;">Total Release: <strong>${formatCurrency(pastDueTotalRelease)}</strong></p>`;
   }
   if (portfolioAverage) {
     portfolioAverage.textContent = formatCurrency(totalReleased);
@@ -1230,7 +1420,7 @@ function renderPortfolio() {
 
   renderDailyCollections(allRecords);
 
-  renderOfficerCounts(records);
+  renderOfficerDashboards();
 }
 
 portfolioDateFilterInput?.addEventListener("change", () => {
@@ -1272,8 +1462,8 @@ const portfolioLogoutConfirmYesBtn = document.getElementById("portfolio-logout-c
 const themeOptions = document.querySelectorAll('input[name="theme-choice"]');
 
 function applyTheme(theme) {
-  const selectedTheme = ["white", "black"].includes(theme) ? theme : "white";
-  document.body.classList.remove("theme-white", "theme-black");
+  const selectedTheme = ["white", "black", "blue", "green"].includes(theme) ? theme : "white";
+  document.body.classList.remove("theme-white", "theme-black", "theme-blue", "theme-green");
   document.body.classList.add(`theme-${selectedTheme}`);
   localStorage.setItem(THEME_KEY, selectedTheme);
   themeOptions.forEach((option) => {
@@ -1488,7 +1678,6 @@ if (!hasStoredPortfolioLogin()) {
   if (portfolioDateFilterInput) {
     portfolioDateFilterInput.value = "";
   }
-  buildOfficerCards();
   loadRecordsFromServer().then(() => renderPortfolio());
 }
 

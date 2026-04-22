@@ -113,6 +113,14 @@
 
       <section class="panel portfolio-types-panel" style="padding: 8px 10px;">
         <div class="table-head" style="margin-bottom: 8px;">
+          <h2 style="font-size: 0.82rem; margin: 0;">Account Officer Dashboards</h2>
+        </div>
+        <div id="officer-dashboards-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px;">
+        </div>
+      </section>
+
+      <section class="panel portfolio-types-panel" style="padding: 8px 10px;">
+        <div class="table-head" style="margin-bottom: 8px;">
           <h2 style="font-size: 0.82rem; margin: 0;">Number of Types of Loans</h2>
         </div>
           <div id="portfolio-types-grid" class="portfolio-types-grid" style="grid-template-columns: repeat(4, 1fr); gap: 7px;">
@@ -172,14 +180,6 @@
           </div>
       </section>
 
-      <section class="panel portfolio-types-panel" style="padding: 8px 10px;">
-        <div class="table-head" style="margin-bottom: 8px;">
-          <h2 style="font-size: 0.82rem; margin: 0;">Account Officers - Outstanding Balance</h2>
-        </div>
-        <div id="portfolio-officers-grid" class="portfolio-types-grid" style="grid-template-columns: repeat(6, 1fr); gap: 7px;">
-        </div>
-      </section>
-
     </main>
 
     <div id="drawer-overlay" class="drawer-overlay" aria-hidden="true"></div>
@@ -192,6 +192,8 @@
         <div class="side-drawer-theme-options" role="radiogroup" aria-label="Theme selection">
           <label class="theme-option"><input type="radio" name="theme-choice" value="white" /> <span>White</span></label>
           <label class="theme-option"><input type="radio" name="theme-choice" value="black" /> <span>Black</span></label>
+          <label class="theme-option"><input type="radio" name="theme-choice" value="blue" /> <span>Blue</span></label>
+          <label class="theme-option"><input type="radio" name="theme-choice" value="green" /> <span>Green</span></label>
         </div>
       </div>
       <div class="side-drawer-footer">
@@ -228,6 +230,6 @@
 
     <script src="client-security.js"></script>
     <script src="pwa-init.js"></script>
-    <script src="portfolio.js?v=20260422g"></script>
+    <script src="portfolio.js?v=20260423h"></script>
   </body>
 </html>

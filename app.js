@@ -5511,7 +5511,8 @@ body.addEventListener("click", async (event) => {
     }
 
     const paymentHistory = getPaymentHistory(record);
-    openPaymentHistoryModal(record, paymentHistory);
+    const recordIndex = allRecords.findIndex((entry) => buildRecordFingerprint(entry) === buildRecordFingerprint(record));
+    openPaymentHistoryModal(record, paymentHistory, recordIndex);
     return;
   }
 
