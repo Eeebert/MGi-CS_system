@@ -68,13 +68,16 @@ app.use(cors({
 }));
 
 // 3. REQUEST SIZE LIMIT
-app.use(express.json({ 
-  limit: "100kb",
+const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024; // 2MB
+const MAX_REQUEST_BODY_LIMIT = "2mb";
+
+app.use(express.json({
+  limit: MAX_REQUEST_BODY_LIMIT,
   strict: true,
 }));
 
-app.use(express.urlencoded({ 
-  limit: "100kb",
+app.use(express.urlencoded({
+  limit: MAX_REQUEST_BODY_LIMIT,
   extended: false,
 }));
 
@@ -89,7 +92,7 @@ app.use((req, res, next) => {
 // 5. INPUT VALIDATION MIDDLEWARE
 const validateInputMiddleware = (req, res, next) => {
   // Validate request body size
-  if (req.body && JSON.stringify(req.body).length > 100 * 1024) {
+  if (req.body && Buffer.byteLength(JSON.stringify(req.body), "utf8") > MAX_REQUEST_BODY_BYTES) {
     return res.status(413).json({ error: "Payload too large" });
   }
   
