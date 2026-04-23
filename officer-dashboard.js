@@ -558,7 +558,9 @@ let syncStatusElement = null;
 let recordsCache = [];
 let isServerWritePending = false;
 let lastLocalMutationAt = 0;
+let lastPaymentAt = 0;
 const EMPTY_OVERWRITE_GUARD_MS = 20000;
+const PAYMENT_SYNC_GUARD_MS = 3000; // Pause sync for 3 seconds after payment
 const RESTORE_BACKUP_AUTH_WINDOW_MS = 30000;
 let hasUnsyncedLocalChanges = false;
 let pendingRetryTimer = null;
@@ -2371,6 +2373,7 @@ function applyPaymentForRow(rowIndex, paidAmount, mode = PAYMENT_MODE_STANDARD) 
   }
 
   setRecords(records);
+  lastPaymentAt = Date.now(); // Record timestamp to prevent sync race condition
   renderRecords();
   showMessage(mode === PAYMENT_MODE_PRINCIPAL_ONLY ? "Principal-only payment applied successfully." : "Payment applied successfully.", "success");
   return true;
@@ -4075,6 +4078,16 @@ function closeDrawer() {
 }
 
 function shouldPauseAutoRefreshSync() {
+  // Pause sync if payment modal is open to prevent race conditions
+  if (paymentEntryModal?.classList.contains("is-open")) {
+    return true;
+  }
+
+  // Pause sync briefly after a payment is made to allow server sync to complete
+  if (Date.now() - lastPaymentAt < PAYMENT_SYNC_GUARD_MS) {
+    return true;
+  }
+
   if (
     openRebateEditorRowIndex >= 0 ||
     openArrearsEditorRowIndex >= 0 ||

@@ -1302,10 +1302,8 @@ body.theme-black .mini-note {
 
 body.theme-pink {
   color: #4f2440;
-  background:
-    radial-gradient(circle at 12% 14%, rgba(255, 195, 230, 0.52) 0, transparent 34%),
-    radial-gradient(circle at 88% 18%, rgba(255, 214, 233, 0.45) 0, transparent 32%),
-    linear-gradient(148deg, #fff6fb 0%, #ffeaf5 45%, #fbe6ff 100%);
+  background: #fffcfe;
+  background: radial-gradient(circle, rgba(255, 252, 254, 1) 0%, rgba(252, 70, 107, 1) 100%);
 }
 
 body.theme-pink .bg-shape {
@@ -1328,10 +1326,19 @@ body.theme-pink .panel {
   box-shadow: 0 18px 34px rgba(151, 56, 114, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.86);
 }
 
+body.theme-pink .topbar {
+  background: #3F5EFB;
+  background: radial-gradient(circle, rgba(63, 94, 251, 1) 0%, rgba(252, 70, 107, 1) 100%);
+  border-color: rgba(255, 255, 255, 0.34);
+  color: #fff4fb;
+  box-shadow: 0 18px 34px rgba(44, 58, 165, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
 body.theme-pink .side-drawer {
-  background: linear-gradient(165deg, rgba(255, 246, 252, 0.98), rgba(255, 232, 245, 0.96));
-  border-left-color: rgba(231, 157, 203, 0.72);
-  box-shadow: -20px 0 36px rgba(129, 40, 93, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  background: #3F5EFB;
+  background: radial-gradient(circle, rgba(63, 94, 251, 1) 0%, rgba(252, 70, 107, 1) 100%);
+  border-left-color: rgba(255, 255, 255, 0.38);
+  box-shadow: -20px 0 36px rgba(38, 52, 146, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 body.theme-pink .theme-option,
@@ -1478,14 +1485,22 @@ body.theme-redwhite .shape-b {
 
 body.theme-redwhite .brand-card,
 body.theme-redwhite .panel {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(255, 245, 245, 0.94));
-  border-color: rgba(220, 98, 98, 0.48);
+  background: #ffffff;
+  border-color: rgba(220, 98, 98, 0.42);
   color: #4b1b1b;
-  box-shadow: 0 18px 34px rgba(157, 54, 54, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 30px rgba(157, 54, 54, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.theme-redwhite .topbar {
+  background: #ffffff;
+  background: radial-gradient(circle, rgba(255, 255, 255, 1) 0%, rgba(252, 70, 70, 1) 100%);
+  border-color: rgba(220, 98, 98, 0.5);
+  color: #4b1b1b;
 }
 
 body.theme-redwhite .side-drawer {
-  background: linear-gradient(165deg, rgba(255, 250, 250, 0.98), rgba(255, 238, 238, 0.96));
+  background: #ffffff;
+  background: radial-gradient(circle, rgba(255, 255, 255, 1) 0%, rgba(252, 70, 70, 1) 100%);
   border-left-color: rgba(214, 92, 92, 0.58);
   box-shadow: -20px 0 36px rgba(131, 44, 44, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
@@ -1548,7 +1563,7 @@ body.theme-redwhite input,
 body.theme-redwhite select,
 body.theme-redwhite textarea,
 body.theme-redwhite .purpose-select-trigger {
-  background: linear-gradient(180deg, #fffafa, #ffeeee);
+  background: #ffffff;
   color: #5b2222;
   border-color: #dcaeae;
 }
@@ -1559,20 +1574,18 @@ body.theme-redwhite textarea::placeholder {
 }
 
 body.theme-redwhite th {
-  background: linear-gradient(180deg, #fff1f1, #ffe1e1);
+  background: #ffffff;
 }
 
 body.theme-redwhite .table-wrap {
-  background: linear-gradient(180deg, rgba(255, 251, 251, 0.98), rgba(255, 242, 242, 0.95));
+  background: #ffffff;
   border-color: #dfb1b1;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 16px 30px rgba(145, 54, 54, 0.11);
 }
 
 body.theme-redwhite .records-panel {
   border-color: rgba(214, 92, 92, 0.42);
-  background:
-    radial-gradient(circle at 92% 8%, rgba(255, 120, 120, 0.14), transparent 32%),
-    linear-gradient(170deg, rgba(255, 255, 255, 0.97), rgba(255, 244, 244, 0.93));
+  background: #ffffff;
   box-shadow: 0 18px 36px rgba(145, 54, 54, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
@@ -1581,30 +1594,131 @@ body.theme-redwhite .logo {
 }
 
 body.theme-redwhite tbody tr {
-  background: rgba(255, 249, 249, 0.95);
+  background: #ffffff;
 }
 
 body.theme-redwhite tbody tr:hover {
-  background: linear-gradient(180deg, rgba(255, 241, 241, 0.95), rgba(255, 232, 232, 0.92));
+  background: #fff7f7;
 }
 
-body.theme-redwhite .btn-secondary {
-  background: linear-gradient(180deg, #fff0f0, #ffe3e3);
-  color: #602727;
-  border-color: rgba(198, 102, 102, 0.6);
-}
-
-body.theme-redwhite .btn-primary {
-  background: linear-gradient(180deg, #ef6767, #d44d4d);
-  color: #fff8f8;
-  border-color: rgba(177, 59, 59, 0.55);
-  box-shadow: 0 0 18px rgba(212, 77, 77, 0.2), inset 0 1px 0 rgba(255, 226, 226, 0.2);
-}
-
+body.theme-redwhite .btn-secondary,
+body.theme-redwhite .btn-primary,
 body.theme-redwhite .btn-danger {
-  background: linear-gradient(180deg, #ee6666, #cf4747);
+  background: linear-gradient(180deg, #ff2b2b 0%, #d80000 52%, #b70000 100%);
   color: #fff8f8;
-  border-color: rgba(173, 53, 53, 0.45);
+  border-color: #8f0000;
+  box-shadow: 0 4px 0 #860000, 0 10px 20px rgba(145, 0, 0, 0.25), inset 0 1px 0 rgba(255, 215, 215, 0.28);
+}
+
+body.theme-redwhite .btn-secondary:hover,
+body.theme-redwhite .btn-primary:hover,
+body.theme-redwhite .btn-danger:hover {
+  filter: brightness(1.06);
+}
+
+body.theme-redwhite .btn-secondary:active,
+body.theme-redwhite .btn-primary:active,
+body.theme-redwhite .btn-danger:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #860000, 0 6px 12px rgba(145, 0, 0, 0.25), inset 0 1px 0 rgba(255, 215, 215, 0.18);
+}
+
+body.theme-redwhite .records-panel .btn-secondary,
+body.theme-redwhite .records-panel .btn-pay,
+body.theme-redwhite .records-panel .statement-btn,
+body.theme-redwhite .records-panel .btn-danger,
+body.theme-redwhite .records-panel .btn-hatag-hatag,
+body.theme-redwhite .records-panel .pay-principal-only-btn,
+body.theme-redwhite .records-panel .rebate-display-btn,
+body.theme-redwhite .records-panel .save-rebate-btn {
+  background: #ffffff;
+  color: #b30000;
+  border-color: #d46a6a;
+  box-shadow: 0 3px 0 #d9d9d9, 0 8px 14px rgba(120, 32, 32, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+body.theme-redwhite .records-panel .btn-secondary:hover,
+body.theme-redwhite .records-panel .btn-pay:hover,
+body.theme-redwhite .records-panel .statement-btn:hover,
+body.theme-redwhite .records-panel .btn-danger:hover,
+body.theme-redwhite .records-panel .btn-hatag-hatag:hover,
+body.theme-redwhite .records-panel .pay-principal-only-btn:hover,
+body.theme-redwhite .records-panel .rebate-display-btn:hover,
+body.theme-redwhite .records-panel .save-rebate-btn:hover {
+  background: #fff7f7;
+  border-color: #c85151;
+  color: #9f0000;
+}
+
+body.theme-redwhite .records-panel .btn-secondary:active,
+body.theme-redwhite .records-panel .btn-pay:active,
+body.theme-redwhite .records-panel .statement-btn:active,
+body.theme-redwhite .records-panel .btn-danger:active,
+body.theme-redwhite .records-panel .btn-hatag-hatag:active,
+body.theme-redwhite .records-panel .pay-principal-only-btn:active,
+body.theme-redwhite .records-panel .rebate-display-btn:active,
+body.theme-redwhite .records-panel .save-rebate-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 #d9d9d9, 0 5px 10px rgba(120, 32, 32, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* Red/white theme: Rebate and Pay Principal Only — pure red 3D. */
+body.theme-redwhite .records-panel .rebate-display-btn,
+body.theme-redwhite .records-panel .save-rebate-btn,
+body.theme-redwhite .records-panel .pay-principal-only-btn {
+  background: linear-gradient(180deg, #ff2b2b 0%, #d80000 52%, #b70000 100%);
+  color: #fff8f8;
+  border-color: #8f0000;
+  box-shadow: 0 4px 0 #860000, 0 10px 20px rgba(145, 0, 0, 0.25), inset 0 1px 0 rgba(255, 215, 215, 0.28);
+}
+
+body.theme-redwhite .records-panel .rebate-display-btn:hover,
+body.theme-redwhite .records-panel .save-rebate-btn:hover,
+body.theme-redwhite .records-panel .pay-principal-only-btn:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 4px 0 #860000, 0 10px 20px rgba(145, 0, 0, 0.25), inset 0 1px 0 rgba(255, 215, 215, 0.28);
+}
+
+body.theme-redwhite .records-panel .rebate-display-btn:active,
+body.theme-redwhite .records-panel .save-rebate-btn:active,
+body.theme-redwhite .records-panel .pay-principal-only-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #860000, 0 6px 12px rgba(145, 0, 0, 0.25), inset 0 1px 0 rgba(255, 215, 215, 0.18);
+}
+
+/* Red/white theme: make these key action buttons light red and flat (no 3D). */
+body.theme-redwhite .records-panel .pay-loan-btn,
+body.theme-redwhite .records-panel .show-payment-history-btn,
+body.theme-redwhite .records-panel .statement-btn,
+body.theme-redwhite .records-panel .write-off-btn,
+body.theme-redwhite .records-panel .hatag-hatag-btn,
+body.theme-redwhite .records-panel .settle-btn {
+  background: #ffdede;
+  color: #9f0000;
+  border-color: #e88f8f;
+  box-shadow: none;
+}
+
+body.theme-redwhite .records-panel .pay-loan-btn:hover,
+body.theme-redwhite .records-panel .show-payment-history-btn:hover,
+body.theme-redwhite .records-panel .statement-btn:hover,
+body.theme-redwhite .records-panel .write-off-btn:hover,
+body.theme-redwhite .records-panel .hatag-hatag-btn:hover,
+body.theme-redwhite .records-panel .settle-btn:hover {
+  background: #ffcfcf;
+  color: #900000;
+  border-color: #df7a7a;
+  box-shadow: none;
+}
+
+body.theme-redwhite .records-panel .pay-loan-btn:active,
+body.theme-redwhite .records-panel .show-payment-history-btn:active,
+body.theme-redwhite .records-panel .statement-btn:active,
+body.theme-redwhite .records-panel .write-off-btn:active,
+body.theme-redwhite .records-panel .hatag-hatag-btn:active,
+body.theme-redwhite .records-panel .settle-btn:active {
+  transform: none;
+  box-shadow: none;
 }
 
 body.theme-redwhite .btn-hamburger {
