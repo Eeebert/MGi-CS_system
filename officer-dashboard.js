@@ -1048,10 +1048,14 @@ async function loadRecordsFromServer() {
         accountOfficer: normalizedOfficer,
       }));
 
+    // Protect local data whenever there are ANY unsynced changes, not just missing records.
+    // The old guard used isMissingUnsyncedLocalRecords which only catches new records —
+    // it misses payment/data changes on existing records since fingerprints (name/date/amount)
+    // remain identical. This caused payments to be silently overwritten by a stale server fetch
+    // when the server PUT was still in-flight or had failed.
     const shouldProtectUnsyncedData = (
       hasUnsyncedLocalChanges &&
-      recordsCache.length > 0 &&
-      isMissingUnsyncedLocalRecords(recordsCache, mergedPayload)
+      recordsCache.length > 0
     );
     if (shouldProtectUnsyncedData) {
       console.info("[sync][officer] Keeping unsynced local records while server payload is stale", {
